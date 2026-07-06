@@ -37,6 +37,17 @@
   .wrap{ max-width: 760px; margin: 0 auto; }
 
   header{ margin-bottom: 32px; }
+  .finished-counter{
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--brass-bright);
+    border: 1px solid #3a4c62;
+    border-radius: 20px;
+    padding: 4px 12px;
+  }
   .eyebrow{
     font-size: 11px;
     letter-spacing: 3px;
@@ -161,6 +172,57 @@
     color: #8fa0b3;
     margin-bottom: 30px;
   }
+
+  .return-shelf-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 10px;
+  }
+  .return-shelf{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+  .return-tile{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 10px 12px;
+    width: 150px;
+    border-top: 4px solid var(--green-ok);
+  }
+  .return-tile .tile-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.25;
+    margin: 0 0 3px;
+  }
+  .return-tile .tile-author{
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin: 0 0 3px;
+  }
+  .return-tile .tile-finished{
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  .return-tile .tile-returned-btn{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: var(--green-ok);
+    border: none;
+    color: #f4efe2;
+    width: 100%;
+  }
+  .return-tile .tile-returned-btn:hover{ background: #3d5a44; }
 
   /* Add form */
   .add-form{
@@ -361,14 +423,23 @@
     cursor: not-allowed;
   }
   .btn-remove{
+    font-size: 10.5px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--card-line);
+  }
+  .btn-remove:hover{ color: var(--red-stamp); border-color: var(--red-stamp); }
+  .btn-finish{
     font-size: 11px;
     padding: 7px 12px;
     border-radius: 3px;
-    background: transparent;
-    color: var(--red-stamp);
-    border: 1px solid var(--red-stamp);
+    background: var(--green-ok);
+    color: #f4efe2;
+    border: none;
   }
-  .btn-remove:hover{ background: rgba(140,47,47,0.08); }
+  .btn-finish:hover{ background: #3d5a44; }
 
   .renew-inline{
     margin-top: 8px;
@@ -406,12 +477,15 @@
     <p class="eyebrow">The Stack</p>
     <h1>Library Tracker</h1>
     <p class="sub">What's due, what's renewed, and what to pick up next — synced across your devices.</p>
+    <div class="finished-counter" id="finished-counter"></div>
   </header>
 
   <div id="hero-slot"><div class="empty-hero">Loading your stack…</div></div>
 
   <p class="reading-shelf-label">Currently reading (up to 5)</p>
   <div id="reading-shelf"></div>
+
+  <div id="return-shelf-wrap"></div>
 
   <div class="add-form">
     <h3>Add a book to the stack</h3>
@@ -490,7 +564,10 @@
       dueDate: f['Due Date'] || '',
       renewable: !!f['Renewable'],
       renewCount: f['Renew Count'] || 0,
-      currentlyReading: !!f['Currently Reading']
+      currentlyReading: !!f['Currently Reading'],
+      finished: !!f['Finished'],
+      finishedDate: f['Finished Date'] || '',
+      returned: !!f['Returned']
     };
   }
 
@@ -553,7 +630,9 @@
       'Due Date': dueDate,
       'Renewable': renewable,
       'Renew Count': 0,
-      'Currently Reading': false
+      'Currently Reading': false,
+      'Finished': false,
+      'Returned': false
     };
     if(borrowDate) fields['Borrow Date'] = borrowDate;
 
@@ -578,13 +657,50 @@
   }
 
   async function removeBook(id){
-    if(!confirm('Remove this book from the stack?')) return;
+    if(!confirm('Remove this book entirely? This is only for mistakes — use "Finished" instead once you\'ve read it.')) return;
     try{
       await airtableRequest(`${API_URL}?records[]=${id}`, { method: 'DELETE' });
       books = books.filter(b => b.id !== id);
     }catch(e){
       console.error('Remove failed:', e);
       alert('Could not remove that book — check your connection and try again.');
+      return;
+    }
+    render();
+  }
+
+  async function markFinished(id){
+    const book = books.find(b => b.id === id);
+    const today = new Date().toISOString().split('T')[0];
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          records: [{ id, fields: { 'Finished': true, 'Finished Date': today, 'Currently Reading': false } }]
+        })
+      });
+      book.finished = true;
+      book.finishedDate = today;
+      book.currentlyReading = false;
+    }catch(e){
+      console.error('Mark finished failed:', e);
+      alert('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+  }
+
+  async function markReturned(id){
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Returned': true } }] })
+      });
+      book.returned = true;
+    }catch(e){
+      console.error('Mark returned failed:', e);
+      alert('Could not update that — check your connection and try again.');
       return;
     }
     render();
@@ -691,14 +807,23 @@
       sortMode === 'title' ? 'Full stack, A–Z by title' :
       'Full stack, A–Z by author';
 
-    const byDue = [...books].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
-    const heroSlot = document.getElementById('hero-slot');
-    const readingBooks = books.filter(b => b.currentlyReading);
+    const activeBooks = books.filter(b => !b.finished);
+    const finishedAwaitingReturn = books.filter(b => b.finished && !b.returned);
+    const finishedCount = books.filter(b => b.finished).length;
 
-    // Hero: soonest due date among books not currently being read
+    document.getElementById('finished-counter').textContent =
+      finishedCount === 0 ? 'No books finished yet' :
+      finishedCount === 1 ? '1 book finished so far' :
+      `${finishedCount} books finished so far`;
+
+    const byDue = [...activeBooks].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const heroSlot = document.getElementById('hero-slot');
+    const readingBooks = activeBooks.filter(b => b.currentlyReading);
+
+    // Hero: soonest due date among active books not currently being read
     const upcoming = byDue.filter(b => !b.currentlyReading);
 
-    if(books.length === 0){
+    if(activeBooks.length === 0){
       heroSlot.innerHTML = '<div class="empty-hero">The stack is empty. Add the first book below.</div>';
     }else if(upcoming.length === 0){
       heroSlot.innerHTML = '<div class="empty-hero">Everything in the stack is currently being read. Nothing else queued up yet.</div>';
@@ -729,7 +854,27 @@
       `).join('') + `</div>`;
     }
 
-    const sorted = sortBooks(books);
+    // Finished, awaiting return shelf
+    const returnWrap = document.getElementById('return-shelf-wrap');
+    if(finishedAwaitingReturn.length === 0){
+      returnWrap.innerHTML = '';
+    }else{
+      returnWrap.innerHTML = `
+        <p class="return-shelf-label">Finished — waiting to go back to the library</p>
+        <div class="return-shelf">
+          ${finishedAwaitingReturn.map(b => `
+            <div class="return-tile">
+              <p class="tile-title">${escapeHtml(b.title)}</p>
+              <p class="tile-author">${escapeHtml(b.author || 'Author unknown')}</p>
+              <p class="tile-finished">Finished ${fmtDate(b.finishedDate)}</p>
+              <button class="tile-returned-btn" onclick="markReturned('${b.id}')">Mark returned</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    const sorted = sortBooks(activeBooks);
     const listEl = document.getElementById('book-list');
     if(sorted.length === 0){
       listEl.innerHTML = '<div class="empty-state">No books borrowed yet — nothing to plan around.</div>';
@@ -776,7 +921,8 @@
             <button class="btn-small" onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
               ${atLimit ? 'Renewed 3/3' : (book.renewable ? 'Renew' : 'Not renewable')}
             </button>
-            <button class="btn-remove" onclick="removeBook('${book.id}')">Finished / Remove</button>
+            <button class="btn-finish" onclick="markFinished('${book.id}')">Finished</button>
+            <button class="btn-remove" onclick="removeBook('${book.id}')">Remove (added by mistake)</button>
           </div>
         </div>
       `;
