@@ -104,6 +104,64 @@
     border-left: 6px solid var(--card-line);
   }
 
+  /* Currently reading shelf */
+  .reading-shelf-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 10px;
+  }
+  .reading-shelf{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+  .reading-tile{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 10px 12px;
+    width: 150px;
+    border-top: 4px solid var(--brass);
+    position: relative;
+  }
+  .reading-tile .tile-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.25;
+    margin: 0 0 3px;
+  }
+  .reading-tile .tile-author{
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin: 0 0 6px;
+  }
+  .reading-tile .tile-due{
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  .reading-tile .tile-stop{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: transparent;
+    border: 1px solid var(--card-line);
+    color: var(--text-muted);
+    width: 100%;
+  }
+  .reading-tile .tile-stop:hover{ border-color: var(--red-stamp); color: var(--red-stamp); }
+  .reading-shelf-empty{
+    font-size: 12px;
+    color: #8fa0b3;
+    margin-bottom: 30px;
+  }
+
   /* Add form */
   .add-form{
     background: var(--ink-2);
@@ -352,6 +410,9 @@
 
   <div id="hero-slot"><div class="empty-hero">Loading your stack…</div></div>
 
+  <p class="reading-shelf-label">Currently reading (up to 5)</p>
+  <div id="reading-shelf"></div>
+
   <div class="add-form">
     <h3>Add a book to the stack</h3>
     <div class="form-grid">
@@ -564,22 +625,25 @@
     render();
   }
 
+  const MAX_CURRENTLY_READING = 5;
+
   async function toggleCurrentlyReading(id){
     const book = books.find(b => b.id === id);
     const wasReading = book.currentlyReading;
-    const previouslyReading = books.find(b => b.currentlyReading && b.id !== id);
 
-    const records = [{ id, fields: { 'Currently Reading': !wasReading } }];
-    if(previouslyReading){
-      records.push({ id: previouslyReading.id, fields: { 'Currently Reading': false } });
+    if(!wasReading){
+      const activeCount = books.filter(b => b.currentlyReading).length;
+      if(activeCount >= MAX_CURRENTLY_READING){
+        alert(`You can only mark up to ${MAX_CURRENTLY_READING} books as currently reading at once. Stop reading one first to swap it out.`);
+        return;
+      }
     }
 
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records })
+        body: JSON.stringify({ records: [{ id, fields: { 'Currently Reading': !wasReading } }] })
       });
-      books.forEach(b => b.currentlyReading = false);
       book.currentlyReading = !wasReading;
     }catch(e){
       console.error('Update failed:', e);
@@ -629,28 +693,17 @@
 
     const byDue = [...books].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
     const heroSlot = document.getElementById('hero-slot');
-    const reading = books.find(b => b.currentlyReading);
+    const readingBooks = books.filter(b => b.currentlyReading);
 
-    if(byDue.length === 0){
+    // Hero: soonest due date among books not currently being read
+    const upcoming = byDue.filter(b => !b.currentlyReading);
+
+    if(books.length === 0){
       heroSlot.innerHTML = '<div class="empty-hero">The stack is empty. Add the first book below.</div>';
-    }else if(reading){
-      // Currently reading takes the hero spot; show what's next after it
-      const upNext = byDue.find(b => b.id !== reading.id);
-      const upNextLine = upNext
-        ? `Up next: <strong>${escapeHtml(upNext.title)}</strong> — ${dueLineFor(upNext).toLowerCase()}`
-        : `Nothing else in the stack yet.`;
-
-      heroSlot.innerHTML = `
-        <div class="next-up">
-          <div class="tag">Currently reading</div>
-          <h2>${escapeHtml(reading.title)}</h2>
-          <div class="author">${escapeHtml(reading.author || 'Author unknown')}</div>
-          <div class="due-line">${dueLineFor(reading)}</div>
-          <div class="up-next-line">${upNextLine}</div>
-        </div>
-      `;
+    }else if(upcoming.length === 0){
+      heroSlot.innerHTML = '<div class="empty-hero">Everything in the stack is currently being read. Nothing else queued up yet.</div>';
     }else{
-      const next = byDue[0];
+      const next = upcoming[0];
       heroSlot.innerHTML = `
         <div class="next-up">
           <div class="tag">Read next</div>
@@ -659,6 +712,21 @@
           <div class="due-line">${dueLineFor(next)}</div>
         </div>
       `;
+    }
+
+    // Currently-reading shelf
+    const shelfEl = document.getElementById('reading-shelf');
+    if(readingBooks.length === 0){
+      shelfEl.innerHTML = '<div class="reading-shelf-empty">Nothing marked as currently reading yet — hit "Start reading" on a book below.</div>';
+    }else{
+      shelfEl.innerHTML = `<div class="reading-shelf">` + readingBooks.map(b => `
+        <div class="reading-tile">
+          <p class="tile-title">${escapeHtml(b.title)}</p>
+          <p class="tile-author">${escapeHtml(b.author || 'Author unknown')}</p>
+          <p class="tile-due">${dueLineFor(b)}</p>
+          <button class="tile-stop" onclick="toggleCurrentlyReading('${b.id}')">Stop reading</button>
+        </div>
+      `).join('') + `</div>`;
     }
 
     const sorted = sortBooks(books);
