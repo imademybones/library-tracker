@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Stack — Library Tracker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap');
+
+  :root{
+    --ink: #1b2733;
+    --ink-2: #263341;
+    --card: #ede6d6;
+    --card-line: #d8cdb4;
+    --brass: #b08d57;
+    --brass-bright: #d4ac6e;
+    --red-stamp: #8c2f2f;
+    --green-ok: #4a6b52;
+    --amber: #a67a2e;
+    --text-dark: #2a2620;
+    --text-muted: #6b6255;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 20% 0%, #223142 0%, transparent 45%),
+      var(--ink);
+    font-family: 'Courier Prime', monospace;
+    color: var(--card);
+    padding: 40px 20px 80px;
+  }
+
+  .wrap{ max-width: 760px; margin: 0 auto; }
+
+  header{ margin-bottom: 32px; }
+  .eyebrow{
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--brass-bright);
+    margin: 0 0 6px;
+  }
+  h1{
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 40px;
+    margin: 0;
+    color: #f4efe2;
+    letter-spacing: -0.5px;
+  }
+  .sub{
+    font-size: 13px;
+    color: #8fa0b3;
+    margin: 8px 0 0;
+    line-height: 1.5;
+  }
+
+  /* Next-up hero */
+  .next-up{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 22px 24px;
+    margin: 28px 0 34px;
+    position: relative;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    border-left: 6px solid var(--brass);
+  }
+  .next-up .tag{
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--brass);
+    font-weight: 700;
+  }
+  .next-up h2{
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    margin: 6px 0 2px;
+    font-weight: 600;
+  }
+  .next-up .author{ color: var(--text-muted); font-size: 13px; }
+  .next-up .due-line{ margin-top: 10px; font-size: 12px; }
+  .next-up .up-next-line{
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--card-line);
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .next-up .up-next-line strong{ color: var(--text-dark); }
+  .empty-hero{
+    background: var(--card);
+    color: var(--text-muted);
+    border-radius: 3px;
+    padding: 22px 24px;
+    margin: 28px 0 34px;
+    font-size: 13px;
+    text-align: center;
+    border-left: 6px solid var(--card-line);
+  }
+
+  /* Add form */
+  .add-form{
+    background: var(--ink-2);
+    border: 1px solid #34455a;
+    border-radius: 4px;
+    padding: 18px 20px;
+    margin-bottom: 34px;
+  }
+  .add-form h3{
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    margin: 0 0 14px;
+    color: var(--brass-bright);
+    font-weight: 600;
+  }
+  .form-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .form-grid .full{ grid-column: 1 / -1; }
+  label{
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin-bottom: 5px;
+  }
+  input[type=text], input[type=date]{
+    width: 100%;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 3px;
+  }
+  input[type=text]:focus, input[type=date]:focus{
+    outline: 2px solid var(--brass-bright);
+    outline-offset: 1px;
+  }
+  .checkbox-row{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .checkbox-row input{ width: 16px; height: 16px; }
+  .checkbox-row label{ margin: 0; text-transform: none; font-size: 12px; letter-spacing: 0; color: #d8cdb4; }
+
+  button{
+    font-family: 'Courier Prime', monospace;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-primary{
+    margin-top: 14px;
+    background: var(--brass);
+    color: #1b2733;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 18px;
+    border-radius: 3px;
+  }
+  .btn-primary:hover{ background: var(--brass-bright); }
+
+  /* Stack list */
+  .stack-toolbar{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 14px;
+  }
+  .stack-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0;
+  }
+  .sort-group{
+    display: flex;
+    gap: 6px;
+  }
+  .sort-btn{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: var(--ink-2);
+    color: #8fa0b3;
+    border: 1px solid #34455a;
+  }
+  .sort-btn:hover{ color: var(--card); }
+  .sort-btn.active{
+    background: var(--brass);
+    color: var(--ink);
+    border-color: var(--brass);
+    font-weight: 700;
+  }
+
+  .card{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: start;
+    border-left: 6px solid var(--card-line);
+  }
+  .card.status-ok{ border-left-color: var(--green-ok); }
+  .card.status-soon{ border-left-color: var(--amber); }
+  .card.status-final{ border-left-color: var(--red-stamp); }
+  .card.is-reading{ box-shadow: 0 0 0 2px var(--brass) inset; }
+
+  .reading-badge{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 6px;
+  }
+  .reading-badge::before{ content: '📖'; font-size: 11px; }
+
+  .btn-reading{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--brass);
+    border: 1px solid var(--brass);
+  }
+  .btn-reading:hover{ background: rgba(176,141,87,0.1); }
+  .btn-reading.active{
+    background: var(--brass);
+    color: var(--ink);
+  }
+
+  .card-title{
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+  .card-author{ font-size: 12px; color: var(--text-muted); margin: 0 0 8px; }
+  .meta-line{ font-size: 11.5px; color: var(--text-muted); margin: 2px 0; }
+  .stamp{
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    margin-top: 8px;
+    border: 1.5px solid currentColor;
+    transform: rotate(-2deg);
+  }
+  .stamp.final{ color: var(--red-stamp); }
+  .stamp.renewable{ color: var(--green-ok); }
+
+  .dots{ margin-top: 6px; font-size: 13px; letter-spacing: 3px; }
+  .dot-on{ color: var(--brass); }
+  .dot-off{ color: var(--card-line); }
+
+  .actions{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .btn-small{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: var(--ink);
+    color: var(--card);
+    white-space: nowrap;
+  }
+  .btn-small:hover{ background: var(--ink-2); }
+  .btn-small:disabled{
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .btn-remove{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--red-stamp);
+    border: 1px solid var(--red-stamp);
+  }
+  .btn-remove:hover{ background: rgba(140,47,47,0.08); }
+
+  .renew-inline{
+    margin-top: 8px;
+    display: none;
+    gap: 6px;
+  }
+  .renew-inline.open{ display: flex; }
+  .renew-inline input{ flex: 1; }
+  .renew-inline button{
+    background: var(--green-ok);
+    color: #f4efe2;
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 3px;
+  }
+
+  .empty-state{
+    text-align: center;
+    color: #8fa0b3;
+    font-size: 12.5px;
+    padding: 30px 10px;
+  }
+
+  @media (max-width: 560px){
+    .form-grid{ grid-template-columns: 1fr; }
+    .card{ grid-template-columns: 1fr; }
+    .actions{ flex-direction: row; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">The Stack</p>
+    <h1>Library Tracker</h1>
+    <p class="sub">What's due, what's renewed, and what to pick up next.</p>
+  </header>
+
+  <div id="hero-slot"></div>
+
+  <div class="add-form">
+    <h3>Add a book to the stack</h3>
+    <div class="form-grid">
+      <div class="full">
+        <label for="f-title">Title</label>
+        <input type="text" id="f-title" placeholder="The Strength of the Few">
+      </div>
+      <div class="full">
+        <label for="f-author">Author</label>
+        <input type="text" id="f-author" placeholder="James Islington">
+      </div>
+      <div>
+        <label for="f-borrow">Borrow date</label>
+        <input type="date" id="f-borrow">
+      </div>
+      <div>
+        <label for="f-due">Due date</label>
+        <input type="date" id="f-due">
+      </div>
+      <div class="full checkbox-row">
+        <input type="checkbox" id="f-renewable" checked>
+        <label for="f-renewable">This book can be renewed</label>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="addBook()">Add to stack</button>
+  </div>
+
+  <div class="stack-toolbar">
+    <p class="stack-label" id="stack-label">Full stack, soonest due first</p>
+    <div class="sort-group">
+      <button class="sort-btn active" id="sort-due" onclick="setSortMode('due')">Due date</button>
+      <button class="sort-btn" id="sort-title" onclick="setSortMode('title')">Title</button>
+      <button class="sort-btn" id="sort-author" onclick="setSortMode('author')">Author</button>
+    </div>
+  </div>
+  <div id="book-list"></div>
+
+</div>
+
+<script>
+  const STORAGE_KEY = 'library-tracker-books-v1';
+  const SORT_KEY = 'library-tracker-sort-v1';
+  let books = [];
+  let sortMode = localStorage.getItem(SORT_KEY) || 'due';
+
+  function loadBooks(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      books = raw ? JSON.parse(raw) : [];
+    }catch(e){
+      books = [];
+    }
+  }
+
+  function saveBooks(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
+  }
+
+  function daysUntil(dateStr){
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const due = new Date(dateStr + 'T00:00:00');
+    return Math.round((due - today) / (1000*60*60*24));
+  }
+
+  function fmtDate(dateStr){
+    if(!dateStr) return '—';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function statusClass(book){
+    const d = daysUntil(book.dueDate);
+    if(!book.renewable && d <= 3) return 'status-final';
+    if(d <= 3) return 'status-soon';
+    if(d < 0) return 'status-final';
+    return 'status-ok';
+  }
+
+  function addBook(){
+    const title = document.getElementById('f-title').value.trim();
+    const author = document.getElementById('f-author').value.trim();
+    const borrowDate = document.getElementById('f-borrow').value;
+    const dueDate = document.getElementById('f-due').value;
+    const renewable = document.getElementById('f-renewable').checked;
+
+    if(!title || !dueDate){
+      alert('At least a title and a due date are needed to add this to the stack.');
+      return;
+    }
+
+    books.push({
+      id: Date.now(),
+      title, author, borrowDate, dueDate,
+      renewable,
+      renewCount: 0,
+      currentlyReading: false
+    });
+
+    saveBooks();
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-author').value = '';
+    document.getElementById('f-borrow').value = '';
+    document.getElementById('f-due').value = '';
+    document.getElementById('f-renewable').checked = true;
+    render();
+  }
+
+  function removeBook(id){
+    if(!confirm('Remove this book from the stack?')) return;
+    books = books.filter(b => b.id !== id);
+    saveBooks();
+    render();
+  }
+
+  function toggleRenewBox(id){
+    const box = document.getElementById('renew-box-' + id);
+    box.classList.toggle('open');
+  }
+
+  function confirmRenew(id){
+    const input = document.getElementById('renew-date-' + id);
+    const newDue = input.value;
+    if(!newDue){
+      alert('Pick the new due date given by the library first.');
+      return;
+    }
+    const book = books.find(b => b.id === id);
+    book.dueDate = newDue;
+    book.renewCount += 1;
+    saveBooks();
+    render();
+  }
+
+  function setSortMode(mode){
+    sortMode = mode;
+    localStorage.setItem(SORT_KEY, mode);
+    render();
+  }
+
+  function toggleCurrentlyReading(id){
+    const book = books.find(b => b.id === id);
+    const wasReading = book.currentlyReading;
+    // Only one book can be "currently reading" at a time
+    books.forEach(b => b.currentlyReading = false);
+    book.currentlyReading = !wasReading;
+    saveBooks();
+    render();
+  }
+
+  function sortBooks(list){
+    const copy = [...list];
+    if(sortMode === 'title'){
+      copy.sort((a,b) => a.title.localeCompare(b.title));
+    }else if(sortMode === 'author'){
+      copy.sort((a,b) => (a.author||'').localeCompare(b.author||''));
+    }else{
+      copy.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    }
+    return copy;
+  }
+
+  function renderDots(count){
+    let out = '';
+    for(let i=0; i<3; i++){
+      out += i < count ? '<span class="dot-on">●</span>' : '<span class="dot-off">●</span>';
+    }
+    return out;
+  }
+
+  function dueLineFor(book){
+    const d = daysUntil(book.dueDate);
+    if(d < 0) return `Overdue by ${Math.abs(d)} day${Math.abs(d)===1?'':'s'} — due ${fmtDate(book.dueDate)}`;
+    if(d === 0) return `Due today (${fmtDate(book.dueDate)})`;
+    return `Due in ${d} day${d===1?'':'s'} — ${fmtDate(book.dueDate)}`;
+  }
+
+  function render(){
+    // Sync sort toolbar buttons
+    ['due','title','author'].forEach(m => {
+      document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
+    });
+    document.getElementById('stack-label').textContent =
+      sortMode === 'due' ? 'Full stack, soonest due first' :
+      sortMode === 'title' ? 'Full stack, A–Z by title' :
+      'Full stack, A–Z by author';
+
+    const byDue = [...books].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const heroSlot = document.getElementById('hero-slot');
+    const reading = books.find(b => b.currentlyReading);
+
+    if(byDue.length === 0){
+      heroSlot.innerHTML = '<div class="empty-hero">The stack is empty. Add the first book below.</div>';
+    }else if(reading){
+      // Currently reading takes the hero spot; show what's next after it
+      const upNext = byDue.find(b => b.id !== reading.id);
+      const upNextLine = upNext
+        ? `Up next: <strong>${escapeHtml(upNext.title)}</strong> — ${dueLineFor(upNext).toLowerCase()}`
+        : `Nothing else in the stack yet.`;
+
+      heroSlot.innerHTML = `
+        <div class="next-up">
+          <div class="tag">Currently reading</div>
+          <h2>${escapeHtml(reading.title)}</h2>
+          <div class="author">${escapeHtml(reading.author || 'Author unknown')}</div>
+          <div class="due-line">${dueLineFor(reading)}</div>
+          <div class="up-next-line">${upNextLine}</div>
+        </div>
+      `;
+    }else{
+      const next = byDue[0];
+      heroSlot.innerHTML = `
+        <div class="next-up">
+          <div class="tag">Read next</div>
+          <h2>${escapeHtml(next.title)}</h2>
+          <div class="author">${escapeHtml(next.author || 'Author unknown')}</div>
+          <div class="due-line">${dueLineFor(next)}</div>
+        </div>
+      `;
+    }
+
+    const sorted = sortBooks(books);
+    const listEl = document.getElementById('book-list');
+    if(sorted.length === 0){
+      listEl.innerHTML = '<div class="empty-state">No books borrowed yet — nothing to plan around.</div>';
+      return;
+    }
+
+    listEl.innerHTML = sorted.map(book => {
+      const d = daysUntil(book.dueDate);
+      const cls = statusClass(book);
+      const atLimit = book.renewCount >= 3;
+      const canRenew = book.renewable && !atLimit;
+
+      let stampHtml = '';
+      if(!book.renewable){
+        stampHtml = `<div class="stamp final">Final loan — cannot renew</div>`;
+      }else if(atLimit){
+        stampHtml = `<div class="stamp final">Max renewals reached</div>`;
+      }else{
+        stampHtml = `<div class="stamp renewable">Renewable</div>`;
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const readingBadge = book.currentlyReading ? `<div class="reading-badge">Currently reading</div>` : '';
+
+      return `
+        <div class="card ${cls} ${book.currentlyReading ? 'is-reading' : ''}">
+          <div>
+            ${readingBadge}
+            <p class="card-title">${escapeHtml(book.title)}</p>
+            <p class="card-author">${escapeHtml(book.author || 'Author unknown')}</p>
+            <p class="meta-line">Borrowed ${fmtDate(book.borrowDate)} · Due ${fmtDate(book.dueDate)}</p>
+            ${stampHtml}
+            <div class="dots">${renderDots(book.renewCount)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
+
+            <div class="renew-inline" id="renew-box-${book.id}">
+              <input type="date" id="renew-date-${book.id}" min="${today}">
+              <button onclick="confirmRenew(${book.id})">Confirm renewal</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading(${book.id})">
+              ${book.currentlyReading ? 'Reading now' : 'Start reading'}
+            </button>
+            <button class="btn-small" onclick="toggleRenewBox(${book.id})" ${canRenew ? '' : 'disabled'}>
+              ${atLimit ? 'Renewed 3/3' : (book.renewable ? 'Renew' : 'Not renewable')}
+            </button>
+            <button class="btn-remove" onclick="removeBook(${book.id})">Finished / Remove</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  loadBooks();
+  render();
+</script>
+</body>
+</html>
