@@ -347,10 +347,10 @@
   <header>
     <p class="eyebrow">The Stack</p>
     <h1>Library Tracker</h1>
-    <p class="sub">What's due, what's renewed, and what to pick up next.</p>
+    <p class="sub">What's due, what's renewed, and what to pick up next — synced across your devices.</p>
   </header>
 
-  <div id="hero-slot"></div>
+  <div id="hero-slot"><div class="empty-hero">Loading your stack…</div></div>
 
   <div class="add-form">
     <h3>Add a book to the stack</h3>
@@ -392,22 +392,65 @@
 </div>
 
 <script>
-  const STORAGE_KEY = 'library-tracker-books-v1';
-  const SORT_KEY = 'library-tracker-sort-v1';
-  let books = [];
-  let sortMode = localStorage.getItem(SORT_KEY) || 'due';
+  // ---- Airtable connection ----
+  // Scoped Personal Access Token: only has read/write access to this one base.
+  const AIRTABLE_TOKEN = 'patUu2M0VkMHUueqM.1ec77f3c51339d204ae18063c993684ba42374d5b01f13adf8a9e8d0b62e9325';
+  const BASE_ID = 'appWNX589s5RjfJTI';
+  const TABLE_NAME = 'Books';
+  const API_URL = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}`;
 
-  function loadBooks(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      books = raw ? JSON.parse(raw) : [];
-    }catch(e){
-      books = [];
+  let books = [];
+  let sortMode = localStorage.getItem('library-tracker-sort') || 'due';
+  let dataLoaded = false;
+
+  async function airtableRequest(url, options = {}){
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${AIRTABLE_TOKEN}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error(`Airtable error ${res.status}: ${errText}`);
     }
+    return res.json();
   }
 
-  function saveBooks(){
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
+  function recordToBook(record){
+    const f = record.fields || {};
+    return {
+      id: record.id,
+      title: f['Title'] || '',
+      author: f['Author'] || '',
+      borrowDate: f['Borrow Date'] || '',
+      dueDate: f['Due Date'] || '',
+      renewable: !!f['Renewable'],
+      renewCount: f['Renew Count'] || 0,
+      currentlyReading: !!f['Currently Reading']
+    };
+  }
+
+  async function loadData(){
+    try{
+      let all = [];
+      let offset = null;
+      do{
+        const url = offset ? `${API_URL}?offset=${offset}` : API_URL;
+        const data = await airtableRequest(url);
+        all = all.concat(data.records);
+        offset = data.offset;
+      }while(offset);
+      books = all.map(recordToBook);
+    }catch(e){
+      console.error('Load failed:', e);
+      document.getElementById('hero-slot').innerHTML =
+        '<div class="empty-hero">Could not load your stack — check the connection and reload.</div>';
+    }
+    dataLoaded = true;
+    render();
   }
 
   function daysUntil(dateStr){
@@ -431,7 +474,7 @@
     return 'status-ok';
   }
 
-  function addBook(){
+  async function addBook(){
     const title = document.getElementById('f-title').value.trim();
     const author = document.getElementById('f-author').value.trim();
     const borrowDate = document.getElementById('f-borrow').value;
@@ -443,15 +486,28 @@
       return;
     }
 
-    books.push({
-      id: Date.now(),
-      title, author, borrowDate, dueDate,
-      renewable,
-      renewCount: 0,
-      currentlyReading: false
-    });
+    const fields = {
+      'Title': title,
+      'Author': author,
+      'Due Date': dueDate,
+      'Renewable': renewable,
+      'Renew Count': 0,
+      'Currently Reading': false
+    };
+    if(borrowDate) fields['Borrow Date'] = borrowDate;
 
-    saveBooks();
+    try{
+      const data = await airtableRequest(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ records: [{ fields }] })
+      });
+      books.push(recordToBook(data.records[0]));
+    }catch(e){
+      console.error('Add failed:', e);
+      alert('Could not save that book — check your connection and try again.');
+      return;
+    }
+
     document.getElementById('f-title').value = '';
     document.getElementById('f-author').value = '';
     document.getElementById('f-borrow').value = '';
@@ -460,10 +516,16 @@
     render();
   }
 
-  function removeBook(id){
+  async function removeBook(id){
     if(!confirm('Remove this book from the stack?')) return;
-    books = books.filter(b => b.id !== id);
-    saveBooks();
+    try{
+      await airtableRequest(`${API_URL}?records[]=${id}`, { method: 'DELETE' });
+      books = books.filter(b => b.id !== id);
+    }catch(e){
+      console.error('Remove failed:', e);
+      alert('Could not remove that book — check your connection and try again.');
+      return;
+    }
     render();
   }
 
@@ -472,7 +534,7 @@
     box.classList.toggle('open');
   }
 
-  function confirmRenew(id){
+  async function confirmRenew(id){
     const input = document.getElementById('renew-date-' + id);
     const newDue = input.value;
     if(!newDue){
@@ -480,25 +542,50 @@
       return;
     }
     const book = books.find(b => b.id === id);
-    book.dueDate = newDue;
-    book.renewCount += 1;
-    saveBooks();
+    const newCount = book.renewCount + 1;
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Due Date': newDue, 'Renew Count': newCount } }] })
+      });
+      book.dueDate = newDue;
+      book.renewCount = newCount;
+    }catch(e){
+      console.error('Renew failed:', e);
+      alert('Could not save the renewal — check your connection and try again.');
+      return;
+    }
     render();
   }
 
   function setSortMode(mode){
     sortMode = mode;
-    localStorage.setItem(SORT_KEY, mode);
+    localStorage.setItem('library-tracker-sort', mode);
     render();
   }
 
-  function toggleCurrentlyReading(id){
+  async function toggleCurrentlyReading(id){
     const book = books.find(b => b.id === id);
     const wasReading = book.currentlyReading;
-    // Only one book can be "currently reading" at a time
-    books.forEach(b => b.currentlyReading = false);
-    book.currentlyReading = !wasReading;
-    saveBooks();
+    const previouslyReading = books.find(b => b.currentlyReading && b.id !== id);
+
+    const records = [{ id, fields: { 'Currently Reading': !wasReading } }];
+    if(previouslyReading){
+      records.push({ id: previouslyReading.id, fields: { 'Currently Reading': false } });
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records })
+      });
+      books.forEach(b => b.currentlyReading = false);
+      book.currentlyReading = !wasReading;
+    }catch(e){
+      console.error('Update failed:', e);
+      alert('Could not update that — check your connection and try again.');
+      return;
+    }
     render();
   }
 
@@ -530,6 +617,7 @@
   }
 
   function render(){
+    if(!dataLoaded) return;
     // Sync sort toolbar buttons
     ['due','title','author'].forEach(m => {
       document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
@@ -633,8 +721,7 @@
     return div.innerHTML;
   }
 
-  loadBooks();
-  render();
+  loadData();
 </script>
 </body>
 </html>
