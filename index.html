@@ -698,17 +698,17 @@
 
             <div class="renew-inline" id="renew-box-${book.id}">
               <input type="date" id="renew-date-${book.id}" min="${today}">
-              <button onclick="confirmRenew(${book.id})">Confirm renewal</button>
+              <button onclick="confirmRenew('${book.id}')">Confirm renewal</button>
             </div>
           </div>
           <div class="actions">
-            <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading(${book.id})">
+            <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading('${book.id}')">
               ${book.currentlyReading ? 'Reading now' : 'Start reading'}
             </button>
-            <button class="btn-small" onclick="toggleRenewBox(${book.id})" ${canRenew ? '' : 'disabled'}>
+            <button class="btn-small" onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
               ${atLimit ? 'Renewed 3/3' : (book.renewable ? 'Renew' : 'Not renewable')}
             </button>
-            <button class="btn-remove" onclick="removeBook(${book.id})">Finished / Remove</button>
+            <button class="btn-remove" onclick="removeBook('${book.id}')">Finished / Remove</button>
           </div>
         </div>
       `;
