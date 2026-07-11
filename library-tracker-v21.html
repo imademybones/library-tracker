@@ -1,0 +1,3064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Stack — Library Tracker</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1b2733">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="The Stack">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap');
+
+  :root{
+    --ink: #1b2733;
+    --ink-2: #263341;
+    --card: #ede6d6;
+    --card-line: #d8cdb4;
+    --brass: #b08d57;
+    --brass-bright: #d4ac6e;
+    --red-stamp: #8c2f2f;
+    --green-ok: #4a6b52;
+    --amber: #a67a2e;
+    --text-dark: #2a2620;
+    --text-muted: #6b6255;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 20% 0%, #223142 0%, transparent 45%),
+      var(--ink);
+    font-family: 'Courier Prime', monospace;
+    color: var(--card);
+    padding: 40px 20px 80px;
+  }
+
+  .wrap{ max-width: 760px; margin: 0 auto; }
+
+  header{ margin-bottom: 32px; }
+  .finished-counter{
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--brass-bright);
+    border: 1px solid #3a4c62;
+    border-radius: 20px;
+    padding: 4px 12px;
+  }
+  .calendar-status{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .btn-calendar{
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: transparent;
+    border: 1px solid var(--brass);
+    color: var(--brass-bright);
+    font-family: 'Courier Prime', monospace;
+  }
+  .btn-calendar:hover{ background: rgba(176,141,87,0.12); }
+  .btn-calendar.connected{
+    background: var(--green-ok);
+    border-color: var(--green-ok);
+    color: #f4efe2;
+  }
+  .calendar-note{
+    font-size: 10.5px;
+    color: #8fa0b3;
+  }
+  .settings-row{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .settings-row label{
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+  }
+  .settings-row input[type=number]{
+    width: 56px;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 13px;
+    padding: 5px 8px;
+    border-radius: 3px;
+  }
+  .eyebrow{
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--brass-bright);
+    margin: 0 0 6px;
+  }
+  h1{
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 40px;
+    margin: 0;
+    color: #f4efe2;
+    letter-spacing: -0.5px;
+  }
+  .sub{
+    font-size: 13px;
+    color: #8fa0b3;
+    margin: 8px 0 0;
+    line-height: 1.5;
+  }
+
+  /* Next-up hero */
+  .next-up{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 22px 24px;
+    margin: 28px 0 34px;
+    position: relative;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    border-left: 6px solid var(--brass);
+  }
+  .next-up .tag{
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--brass);
+    font-weight: 700;
+  }
+  .next-up h2{
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    margin: 6px 0 2px;
+    font-weight: 600;
+  }
+  .next-up .author{ color: var(--text-muted); font-size: 13px; }
+  .next-up .due-line{ margin-top: 10px; font-size: 12px; }
+  .next-up .up-next-line{
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--card-line);
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .next-up .up-next-line strong{ color: var(--text-dark); }
+  .next-up-inner{
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .next-up-text{ flex: 1; min-width: 0; }
+  .cover-thumb-hero{
+    width: 64px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 2px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    flex-shrink: 0;
+  }
+  .cover-placeholder-hero{
+    width: 64px;
+    height: 96px;
+    border-radius: 2px;
+    background: var(--card-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+  .card-body{
+    display: flex;
+    gap: 12px;
+    min-width: 0;
+  }
+  .card-text{ flex: 1; min-width: 0; }
+  .cover-thumb{
+    width: 44px;
+    height: 66px;
+    object-fit: cover;
+    border-radius: 2px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    flex-shrink: 0;
+  }
+  .cover-placeholder{
+    width: 44px;
+    height: 66px;
+    border-radius: 2px;
+    background: var(--card-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .empty-hero{
+    background: var(--card);
+    color: var(--text-muted);
+    border-radius: 3px;
+    padding: 22px 24px;
+    margin: 28px 0 34px;
+    font-size: 13px;
+    text-align: center;
+    border-left: 6px solid var(--card-line);
+  }
+
+  /* Currently reading shelf */
+  .reading-shelf-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 10px;
+  }
+
+  /* Due-date dashboard */
+  .due-dashboard{ margin: 0 0 26px; }
+  .dash-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 10px;
+  }
+  .dash-grid{
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .dash-card{
+    flex: 1;
+    min-width: 110px;
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 12px 14px;
+    border-left: 4px solid var(--card-line);
+  }
+  .dash-card .dash-num{
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 3px;
+  }
+  .dash-card .dash-lbl{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .dash-card.overdue{ border-left-color: var(--red-stamp); }
+  .dash-card.due-today{ border-left-color: var(--red-stamp); }
+  .dash-card.due-week{ border-left-color: var(--amber); }
+  .dash-card.plenty{ border-left-color: var(--green-ok); }
+  .dash-card.overdue .dash-num{ color: var(--red-stamp); }
+  .dash-card.due-today .dash-num{ color: var(--red-stamp); }
+  .dash-card.due-week .dash-num{ color: var(--amber); }
+  .dash-card.plenty .dash-num{ color: var(--green-ok); }
+  .reading-shelf{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+  .reading-tile{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 10px 12px;
+    width: 150px;
+    border-top: 4px solid var(--brass);
+    position: relative;
+  }
+  .reading-tile .tile-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.25;
+    margin: 0 0 3px;
+  }
+  .reading-tile .tile-author{
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin: 0 0 6px;
+  }
+  .reading-tile .tile-due{
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  .reading-tile .tile-stop{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: transparent;
+    border: 1px solid var(--card-line);
+    color: var(--text-muted);
+    width: 100%;
+  }
+  .reading-tile .tile-stop:hover{ border-color: var(--red-stamp); color: var(--red-stamp); }
+  .reading-shelf-empty{
+    font-size: 12px;
+    color: #8fa0b3;
+    margin-bottom: 30px;
+  }
+
+  .return-shelf-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 10px;
+  }
+  .return-shelf{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 30px;
+  }
+  .return-tile{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 10px 12px;
+    width: 150px;
+    border-top: 4px solid var(--green-ok);
+  }
+  .return-tile .tile-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.25;
+    margin: 0 0 3px;
+  }
+  .return-tile .tile-author{
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin: 0 0 3px;
+  }
+  .return-tile .tile-finished{
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  .return-tile .tile-returned-btn{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: var(--green-ok);
+    border: none;
+    color: #f4efe2;
+    width: 100%;
+  }
+  .return-tile .tile-returned-btn:hover{ background: #3d5a44; }
+  .return-tile .tile-unfinish-btn{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: transparent;
+    border: 1px solid var(--card-line);
+    color: var(--text-muted);
+    width: 100%;
+    margin-top: 6px;
+  }
+  .return-tile .tile-unfinish-btn:hover{ border-color: var(--brass); color: var(--brass); }
+
+  .history-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 24px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .history-label .chevron{
+    display: inline-block;
+    transition: transform 0.15s;
+    font-size: 10px;
+  }
+  .history-label.collapsed .chevron{ transform: rotate(-90deg); }
+  .history-list{ margin-bottom: 20px; }
+  .history-list.collapsed{ display: none; }
+  .history-row{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    border-left: 4px solid var(--green-ok);
+  }
+  .history-row-top{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .history-row .hr-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .history-row .hr-meta{ font-size: 11.5px; color: var(--text-muted); margin: 0; }
+  .history-row .hr-badge{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .hr-badge.badge-returned{ background: rgba(74,107,82,0.15); color: var(--green-ok); }
+  .hr-badge.badge-pending{ background: rgba(166,122,46,0.15); color: var(--amber); }
+  .history-row textarea{
+    width: 100%;
+    margin-top: 10px;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12.5px;
+    padding: 8px 10px;
+    border-radius: 3px;
+    min-height: 56px;
+    resize: vertical;
+  }
+  .history-row textarea:focus{ outline: 2px solid var(--brass-bright); outline-offset: 1px; }
+  .history-row .hr-save{
+    margin-top: 8px;
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 3px;
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .history-row .hr-save:hover{ background: var(--brass-bright); }
+  .history-row .hr-saved-note{
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  /* ---- v21: editable finished date + move-back-to-stack in history rows ---- */
+  .hr-date-edit{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--card-line);
+    flex-wrap: wrap;
+  }
+  .hr-date-edit label{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .hr-date-edit input[type=date]{
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+  }
+  .hr-date-edit button{
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .hr-date-edit button:hover{ background: var(--brass-bright); }
+  .hr-unfinish{
+    margin-top: 8px;
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: transparent;
+    border: 1px dashed var(--card-line);
+    color: var(--text-muted);
+  }
+  .hr-unfinish:hover{ border-color: var(--red-stamp); color: var(--red-stamp); }
+  .history-empty{
+    font-size: 12px;
+    color: #8fa0b3;
+    margin-bottom: 20px;
+  }
+
+  /* To-read wishlist */
+  .wishlist-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 24px 0 10px;
+  }
+  .quick-add{
+    background: var(--ink-2);
+    border: 1px solid #34455a;
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .quick-add-row{
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr auto;
+    gap: 8px;
+  }
+  .quick-add-row input{
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 3px;
+    width: 100%;
+  }
+  .quick-add-row input:focus{ outline: 2px solid var(--brass-bright); outline-offset: 1px; }
+  .quick-add-row button{
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .quick-add-row button:hover{ background: var(--brass-bright); }
+
+  .wishlist-row{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    border-left: 4px dashed var(--brass);
+  }
+  .wishlist-row-top{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .wl-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .wl-meta{ font-size: 11.5px; color: var(--text-muted); margin: 0; }
+  .wl-actions{ display: flex; gap: 6px; flex-shrink: 0; }
+  .borrow-inline{
+    display: none;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--card-line);
+    flex-wrap: wrap;
+  }
+  .borrow-inline.open{ display: flex; }
+  .borrow-inline input[type=date]{
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+  }
+  .borrow-inline label{
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .borrow-inline button{
+    background: var(--green-ok);
+    color: #f4efe2;
+    font-size: 11px;
+    padding: 7px 10px;
+    border-radius: 3px;
+  }
+  .wishlist-empty{
+    font-size: 12px;
+    color: #8fa0b3;
+    margin-bottom: 20px;
+  }
+
+  /* ---- v20: wishlist priority + tags + drag reorder + inline edit ---- */
+  .quick-add-row2{
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .quick-add-field-label{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0 0 5px;
+    display: block;
+  }
+  .quick-add-row2 select{
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12.5px;
+    padding: 7px 9px;
+    border-radius: 3px;
+  }
+  .tag-check-group{
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .tag-check-group label{
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: #d8cdb4;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .tag-check-group input{ width: 14px; height: 14px; }
+
+  .wl-drag-handle{
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 0 6px 0 0;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .wl-drag-handle:active{ cursor: grabbing; }
+  .wishlist-row{ display: flex; gap: 4px; align-items: flex-start; }
+  .wishlist-row.dragging{ opacity: 0.4; }
+  .wishlist-row-body{ flex: 1; min-width: 0; }
+  .wishlist-row.drag-over-top{ box-shadow: inset 0 3px 0 var(--brass-bright); }
+  .wishlist-row.drag-over-bottom{ box-shadow: inset 0 -3px 0 var(--brass-bright); }
+
+  .wl-priority{
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 8px;
+    font-weight: 700;
+    margin-right: 6px;
+  }
+  .wl-priority.priority-high{ background: rgba(140,47,47,0.15); color: var(--red-stamp); }
+  .wl-priority.priority-medium{ background: rgba(166,122,46,0.15); color: var(--amber); }
+  .wl-priority.priority-low{ background: rgba(74,107,82,0.15); color: var(--green-ok); }
+
+  .wl-tags{ display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+  .wl-tag{
+    font-size: 9.5px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    background: var(--card-line);
+    color: var(--text-dark);
+  }
+
+  .wl-edit-toggle{
+    font-size: 10.5px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--brass);
+    border: 1px solid var(--brass);
+  }
+  .wl-edit-toggle:hover{ background: rgba(176,141,87,0.1); }
+  .wl-edit-inline{
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--card-line);
+  }
+  .wl-edit-inline.open{ display: flex; }
+  .wl-edit-inline button{
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 7px 10px;
+    border-radius: 3px;
+    align-self: flex-start;
+  }
+  .wl-edit-inline button:hover{ background: var(--brass-bright); }
+
+  /* Add form */
+  .add-form{
+    background: var(--ink-2);
+    border: 1px solid #34455a;
+    border-radius: 4px;
+    padding: 18px 20px;
+    margin-bottom: 34px;
+  }
+  .add-form h3{
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    margin: 0 0 14px;
+    color: var(--brass-bright);
+    font-weight: 600;
+  }
+  .form-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .form-grid .full{ grid-column: 1 / -1; }
+  label{
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin-bottom: 5px;
+  }
+  input[type=text], input[type=date]{
+    width: 100%;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 3px;
+  }
+  input[type=text]:focus, input[type=date]:focus{
+    outline: 2px solid var(--brass-bright);
+    outline-offset: 1px;
+  }
+  .checkbox-row{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .checkbox-row input{ width: 16px; height: 16px; }
+  .checkbox-row label{ margin: 0; text-transform: none; font-size: 12px; letter-spacing: 0; color: #d8cdb4; }
+
+  button{
+    font-family: 'Courier Prime', monospace;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-primary{
+    margin-top: 14px;
+    background: var(--brass);
+    color: #1b2733;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 10px 18px;
+    border-radius: 3px;
+  }
+  .btn-primary:hover{ background: var(--brass-bright); }
+
+  /* Stack list */
+  .stack-toolbar{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 14px;
+  }
+  .stack-search{
+    flex: 1;
+    min-width: 160px;
+    max-width: 260px;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12.5px;
+    padding: 7px 10px;
+    border-radius: 3px;
+  }
+  .stack-search:focus{ outline: 2px solid var(--brass-bright); outline-offset: 1px; }
+  .btn-export{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: var(--ink-2);
+    color: #8fa0b3;
+    border: 1px solid #34455a;
+  }
+  .btn-export:hover{ color: var(--card); border-color: var(--brass); }
+  .stack-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 0;
+  }
+  .sort-group{
+    display: flex;
+    gap: 6px;
+  }
+  .sort-btn{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: var(--ink-2);
+    color: #8fa0b3;
+    border: 1px solid #34455a;
+  }
+  .sort-btn:hover{ color: var(--card); }
+  .sort-btn.active{
+    background: var(--brass);
+    color: var(--ink);
+    border-color: var(--brass);
+    font-weight: 700;
+  }
+
+  .card{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: start;
+    border-left: 6px solid var(--card-line);
+  }
+  .card.status-ok{ border-left-color: var(--green-ok); }
+  .card.status-soon{ border-left-color: var(--amber); }
+  .card.status-final{ border-left-color: var(--red-stamp); }
+  .card.is-reading{ box-shadow: 0 0 0 2px var(--brass) inset; }
+
+  .reading-badge{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 6px;
+  }
+  .reading-badge::before{ content: '📖'; font-size: 11px; }
+
+  .btn-reading{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--brass);
+    border: 1px solid var(--brass);
+  }
+  .btn-reading:hover{ background: rgba(176,141,87,0.1); }
+  .btn-reading.active{
+    background: var(--brass);
+    color: var(--ink);
+  }
+
+  .card-title{
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+  .card-author{ font-size: 12px; color: var(--text-muted); margin: 0 0 8px; }
+  .meta-line{ font-size: 11.5px; color: var(--text-muted); margin: 2px 0; }
+  .stamp{
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    margin-top: 8px;
+    border: 1.5px solid currentColor;
+    transform: rotate(-2deg);
+  }
+  .stamp.final{ color: var(--red-stamp); }
+  .stamp.renewable{ color: var(--green-ok); }
+
+  .dots{ margin-top: 6px; font-size: 13px; letter-spacing: 3px; }
+  .dot-on{ color: var(--brass); }
+  .dot-off{ color: var(--card-line); }
+
+  /* Reading progress */
+  .progress-wrap{ margin-top: 8px; }
+  .progress-line{
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .progress-line strong{ color: var(--text-dark); }
+  .progress-track{
+    height: 6px;
+    background: var(--card-line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill{
+    height: 100%;
+    background: var(--brass);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .progress-track.tile-track{ height: 5px; }
+  .tile-progress-line{
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 0 0 4px;
+  }
+  .tile-update-btn{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 2px;
+    background: transparent;
+    border: 1px solid var(--card-line);
+    color: var(--text-muted);
+    width: 100%;
+    margin-top: 6px;
+  }
+  .tile-update-btn:hover{ border-color: var(--brass); color: var(--brass); }
+  .progress-inline{
+    display: none;
+    gap: 6px;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .progress-inline.open{ display: flex; }
+  .progress-inline input[type=number]{
+    width: 64px;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+  }
+  .progress-inline span{ font-size: 11.5px; color: var(--text-muted); }
+  .progress-inline button{
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 10.5px;
+    padding: 6px 9px;
+    border-radius: 3px;
+  }
+
+  .actions{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .btn-small{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: var(--ink);
+    color: var(--card);
+    white-space: nowrap;
+  }
+  .btn-small:hover{ background: var(--ink-2); }
+  .btn-small:disabled{
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .btn-remove{
+    font-size: 10.5px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px dashed var(--card-line);
+  }
+  .btn-remove:hover{ color: var(--red-stamp); border-color: var(--red-stamp); }
+  .btn-finish{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: var(--green-ok);
+    color: #f4efe2;
+    border: none;
+  }
+  .btn-finish:hover{ background: #3d5a44; }
+
+  .renew-inline{
+    margin-top: 8px;
+    display: none;
+    gap: 6px;
+  }
+  .renew-inline.open{ display: flex; }
+  .renew-inline input{ flex: 1; }
+  .renew-inline button{
+    background: var(--green-ok);
+    color: #f4efe2;
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 3px;
+  }
+
+  /* ---- v21: finish-with-date inline box ---- */
+  .finish-inline{
+    margin-top: 8px;
+    display: none;
+    gap: 6px;
+  }
+  .finish-inline.open{ display: flex; }
+  .finish-inline input{ flex: 1; }
+  .finish-inline button{
+    background: var(--green-ok);
+    color: #f4efe2;
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 3px;
+  }
+
+  .btn-edit{
+    font-size: 11px;
+    padding: 7px 12px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--brass);
+    border: 1px solid var(--brass);
+  }
+  .btn-edit:hover{ background: rgba(176,141,87,0.1); }
+
+  .edit-inline{
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--card-line);
+  }
+  .edit-inline.open{ display: flex; }
+  .edit-inline .edit-row{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .edit-inline input[type=text],
+  .edit-inline input[type=date],
+  .edit-inline input[type=number]{
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    width: 100%;
+  }
+  .edit-inline label{
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .edit-inline .edit-check-row{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .edit-inline .edit-check-row input[type=number]{ width: 60px; }
+  .edit-inline button{
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-radius: 3px;
+    align-self: flex-start;
+  }
+  .edit-inline button:hover{ background: var(--brass-bright); }
+
+  .empty-state{
+    text-align: center;
+    color: #8fa0b3;
+    font-size: 12.5px;
+    padding: 30px 10px;
+  }
+
+  @media (max-width: 560px){
+    .form-grid{ grid-template-columns: 1fr; }
+    .card{ grid-template-columns: 1fr; }
+    .actions{ flex-direction: row; }
+  }
+
+  /* ---- v16: tabs ---- */
+  .tab-bar{
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #34455a;
+    margin-bottom: 24px;
+  }
+  .tab-btn{
+    background: none;
+    border: none;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    padding: 10px 4px;
+    margin-right: 22px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab-btn:hover{ color: var(--card); }
+  .tab-btn.active{ color: var(--brass-bright); border-bottom-color: var(--brass); }
+  .tab-count{
+    display: inline-block;
+    font-size: 10px;
+    color: var(--ink);
+    background: var(--brass);
+    border-radius: 8px;
+    padding: 1px 6px;
+    margin-left: 5px;
+    font-weight: 700;
+  }
+  .tab-panel{ display: none; }
+  .tab-panel.active{ display: block; }
+
+  /* ---- v16: collapsible section toggles ---- */
+  .disclosure{
+    background: var(--ink-2);
+    border: 1px solid #34455a;
+    border-radius: 4px;
+    margin-bottom: 22px;
+    overflow: hidden;
+  }
+  .disclosure-head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .disclosure-head h3{
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    margin: 0;
+    color: var(--brass-bright);
+    font-weight: 600;
+  }
+  .disclosure-chevron{
+    font-size: 11px;
+    color: #8fa0b3;
+    transition: transform 0.15s;
+  }
+  .disclosure.open .disclosure-chevron{ transform: rotate(180deg); }
+  .disclosure-body{
+    display: none;
+    padding: 0 18px 18px;
+  }
+  .disclosure.open .disclosure-body{ display: block; }
+
+  /* ---- v16: overflow action menu ---- */
+  .actions{ position: relative; }
+  .actions-primary{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .btn-overflow{
+    font-size: 14px;
+    letter-spacing: 2px;
+    padding: 7px 10px;
+    border-radius: 3px;
+    background: var(--ink);
+    color: var(--card);
+    line-height: 1;
+  }
+  .btn-overflow:hover{ background: var(--ink-2); }
+  .overflow-menu{
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: var(--card);
+    border: 1px solid var(--card-line);
+    border-radius: 4px;
+    padding: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    z-index: 5;
+    min-width: 150px;
+  }
+  .overflow-menu.open{ display: flex; }
+  .overflow-menu button{
+    background: none;
+    color: var(--text-dark);
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    text-align: left;
+    padding: 7px 9px;
+    border-radius: 3px;
+  }
+  .overflow-menu button:hover{ background: var(--card-line); }
+  .overflow-menu button.danger-item:hover{ background: rgba(140,47,47,0.15); color: var(--red-stamp); }
+  .overflow-menu button.danger-item.confirming{ background: var(--red-stamp); color: #f4efe2; }
+  .overflow-menu button:disabled{ opacity: 0.4; cursor: not-allowed; }
+
+  /* ---- v16: toast ---- */
+  .toast{
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    left: 24px;
+    max-width: 360px;
+    margin-left: auto;
+    background: var(--card);
+    color: var(--text-dark);
+    border: 1px solid var(--brass);
+    border-radius: 3px;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12.5px;
+    padding: 11px 16px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show{ opacity: 1; transform: translateY(0); }
+
+  /* ---- v16: calendar disconnect inline confirm ---- */
+  .btn-calendar.confirming{ background: var(--red-stamp); border-color: var(--red-stamp); color: #f4efe2; }
+
+  /* ---- v16: stats tab ---- */
+  .stats-grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 26px;
+  }
+  .stats-card{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 16px 18px;
+    border-left: 4px solid var(--brass);
+  }
+  .stats-card .big-num{
+    font-family: 'Fraunces', serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+    color: var(--ink);
+  }
+  .stats-card .big-label{
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .stats-section-title{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8fa0b3;
+    margin: 24px 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #34455a;
+  }
+  .top-list{ display: flex; flex-direction: column; gap: 8px; }
+  .top-item{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--card);
+    border-radius: 3px;
+    color: var(--text-dark);
+  }
+  .top-item .rank{
+    font-family: 'Fraunces', serif;
+    font-size: 12px;
+    color: var(--brass);
+    font-weight: 700;
+    width: 18px;
+    flex-shrink: 0;
+  }
+  .top-item .name{ flex: 1; font-size: 13px; }
+  .top-item .score{ font-size: 11.5px; color: var(--text-muted); }
+  .year-bars{ display: flex; flex-direction: column; gap: 6px; }
+  .year-bar-row{ display: flex; align-items: center; gap: 10px; }
+  .year-bar-label{ font-size: 11px; color: #8fa0b3; width: 42px; flex-shrink: 0; }
+  .year-bar-track{ flex: 1; height: 8px; background: var(--ink-2); border-radius: 4px; overflow: hidden; border: 1px solid #34455a; }
+  .year-bar-fill{ height: 100%; background: var(--brass); border-radius: 4px; }
+  .year-bar-count{ font-size: 11px; color: #8fa0b3; width: 18px; text-align: right; flex-shrink: 0; }
+  .stats-empty{ font-size: 12.5px; color: #8fa0b3; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">The Stack</p>
+    <h1>Library Tracker</h1>
+    <p class="sub">What's due, what's renewed, and what to pick up next — synced across your devices.</p>
+    <div class="finished-counter" id="finished-counter"></div>
+    <div class="calendar-status">
+      <button class="btn-calendar" id="calendar-btn" onclick="handleCalendarButtonClick()">Connect Google Calendar</button>
+      <span class="calendar-note" id="calendar-note">Due dates will sync automatically once connected.</span>
+    </div>
+    <div class="settings-row">
+      <label for="max-renewals-input">Max renewals per book</label>
+      <input type="number" id="max-renewals-input" min="0" max="20" value="3" onchange="setMaxRenewals(this.value)">
+    </div>
+  </header>
+
+  <div id="hero-slot"><div class="empty-hero">Loading your stack…</div></div>
+
+  <div id="due-dashboard-slot"></div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-stack" onclick="showTab('stack')">Stack</button>
+    <button class="tab-btn" id="tab-btn-wishlist" onclick="showTab('wishlist')">Wishlist<span class="tab-count" id="wishlist-tab-count" style="display:none"></span></button>
+    <button class="tab-btn" id="tab-btn-history" onclick="showTab('history')">History</button>
+    <button class="tab-btn" id="tab-btn-stats" onclick="showTab('stats')">Stats</button>
+  </div>
+
+  <!-- STACK TAB -->
+  <div class="tab-panel active" id="tab-panel-stack">
+
+    <p class="reading-shelf-label">Currently reading (up to 5)</p>
+    <div id="reading-shelf"></div>
+
+    <div id="return-shelf-wrap"></div>
+
+    <div class="disclosure" id="add-form-disclosure">
+      <div class="disclosure-head" onclick="toggleDisclosure('add-form-disclosure')">
+        <h3>+ Add a book to the stack</h3>
+        <span class="disclosure-chevron">▾</span>
+      </div>
+      <div class="disclosure-body">
+        <div class="form-grid">
+          <div class="full">
+            <label for="f-title">Title</label>
+            <input type="text" id="f-title" placeholder="The Strength of the Few">
+          </div>
+          <div class="full">
+            <label for="f-author">Author</label>
+            <input type="text" id="f-author" placeholder="James Islington">
+          </div>
+          <div class="full">
+            <label for="f-source">Source (optional)</label>
+            <input type="text" id="f-source" placeholder="e.g. Wollongong Library">
+          </div>
+          <div>
+            <label for="f-borrow">Borrow date</label>
+            <input type="date" id="f-borrow">
+          </div>
+          <div>
+            <label for="f-due">Due date</label>
+            <input type="date" id="f-due">
+          </div>
+          <div>
+            <label for="f-totalpages">Total pages (optional)</label>
+            <input type="text" id="f-totalpages" placeholder="e.g. 320" inputmode="numeric">
+          </div>
+          <div class="full checkbox-row">
+            <input type="checkbox" id="f-renewable" checked>
+            <label for="f-renewable">This book can be renewed</label>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="addBook()">Add to stack</button>
+      </div>
+    </div>
+
+    <div class="stack-toolbar">
+      <p class="stack-label" id="stack-label">Full stack, soonest due first</p>
+      <input type="text" id="stack-search" class="stack-search" placeholder="Search title or author…" oninput="handleSearchInput()">
+      <div class="sort-group">
+        <button class="sort-btn active" id="sort-due" onclick="setSortMode('due')">Due date</button>
+        <button class="sort-btn" id="sort-title" onclick="setSortMode('title')">Title</button>
+        <button class="sort-btn" id="sort-author" onclick="setSortMode('author')">Author</button>
+      </div>
+      <button class="btn-export" onclick="exportBackup()" title="Download a backup JSON file">↓ Export</button>
+    </div>
+    <div id="book-list"></div>
+  </div>
+
+  <!-- WISHLIST TAB -->
+  <div class="tab-panel" id="tab-panel-wishlist">
+    <div class="disclosure" id="quick-add-disclosure">
+      <div class="disclosure-head" onclick="toggleDisclosure('quick-add-disclosure')">
+        <h3>+ Add to to-read list</h3>
+        <span class="disclosure-chevron">▾</span>
+      </div>
+      <div class="disclosure-body">
+        <div class="quick-add-row" style="margin-top:2px;">
+          <input type="text" id="w-title" placeholder="Title">
+          <input type="text" id="w-author" placeholder="Author">
+          <input type="text" id="w-source" placeholder="Where from (e.g. Wollongong Library)">
+          <button onclick="addWishlistBook()">Add</button>
+        </div>
+        <div class="quick-add-row2">
+          <div>
+            <label class="quick-add-field-label" for="w-priority">Priority</label>
+            <select id="w-priority">
+              <option value="">None</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+          <div>
+            <label class="quick-add-field-label">Tags</label>
+            <div class="tag-check-group">
+              <label><input type="checkbox" id="w-tag-reserved" value="Reserved"> Reserved</label>
+              <label><input type="checkbox" id="w-tag-available" value="Available"> Available</label>
+              <label><input type="checkbox" id="w-tag-series" value="Series"> Series</label>
+              <label><input type="checkbox" id="w-tag-recommendation" value="Recommendation"> Recommendation</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="wishlist-list"></div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div class="tab-panel" id="tab-panel-history">
+    <div id="history-wrap"></div>
+  </div>
+
+  <!-- STATS TAB -->
+  <div class="tab-panel" id="tab-panel-stats">
+    <div class="stats-grid" id="stats-grid"></div>
+    <div id="stats-extra"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---- Airtable connection (via Cloudflare Worker proxy) ----
+  // The Airtable token now lives only in the Worker's environment secrets —
+  // it is never present in this file or in page source. Replace WORKER_URL
+  // below with your deployed Worker's URL (e.g.
+  // https://library-tracker-proxy.YOUR-SUBDOMAIN.workers.dev).
+  const WORKER_URL = 'https://library-tracker-proxy.stephen-nolan85.workers.dev';
+  const API_URL = WORKER_URL;
+
+  // ---- v16: toast ----
+  let toastTimer;
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    if(!t){ return; } // toast element not in DOM yet (shouldn't happen)
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  // ---- v16: tabs ----
+  let activeTab = 'stack';
+  function showTab(tab){
+    activeTab = tab;
+    ['stack','wishlist','history','stats'].forEach(t => {
+      document.getElementById('tab-panel-' + t).classList.toggle('active', t === tab);
+      document.getElementById('tab-btn-' + t).classList.toggle('active', t === tab);
+    });
+    closeOverflowMenu();
+    if(tab === 'stats') renderStats();
+  }
+
+  // ---- v16: collapsible disclosures (add-book / quick-add forms) ----
+  function toggleDisclosure(id){
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('open');
+  }
+
+  // ---- v16: per-card overflow action menu ----
+  let openOverflowId = null;
+  function toggleOverflowMenu(id){
+    openOverflowId = (openOverflowId === id) ? null : id;
+    render();
+  }
+  function closeOverflowMenu(){
+    if(openOverflowId !== null){ openOverflowId = null; render(); }
+  }
+  document.addEventListener('click', function(e){
+    if(openOverflowId !== null && !e.target.closest('.actions')){
+      closeOverflowMenu();
+    }
+  });
+
+  let books = [];
+  // Cover art cache (Open Library, keyed by lowercase "title|||author").
+  // Value is a cover image URL once resolved, or null if a lookup found nothing.
+  const coverCache = {};
+
+  function coverKey(title, author){
+    return (title || '').trim().toLowerCase() + '|||' + (author || '').trim().toLowerCase();
+  }
+
+  async function fetchCover(title, author){
+    const key = coverKey(title, author);
+    if(key in coverCache) return coverCache[key];
+    coverCache[key] = undefined; // mark in-flight so we don't fire duplicate lookups
+    try{
+      const params = new URLSearchParams({ title: title || '', limit: '1', fields: 'cover_i' });
+      if(author) params.set('author', author);
+      const res = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+      const data = await res.json();
+      const doc = data.docs && data.docs[0];
+      coverCache[key] = (doc && doc.cover_i) ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
+    }catch(e){
+      coverCache[key] = null;
+    }
+    // A cover just resolved (or failed) — re-render so it can appear.
+    render();
+    return coverCache[key];
+  }
+
+  // Returns cover HTML for a book. Kicks off a background lookup the first
+  // time a given title/author is seen; renders a placeholder until it resolves.
+  function coverHtml(book, variant){
+    const key = coverKey(book.title, book.author);
+    const cached = coverCache[key];
+    const imgClass = variant === 'hero' ? 'cover-thumb-hero' : 'cover-thumb';
+    const placeholderClass = variant === 'hero' ? 'cover-placeholder-hero' : 'cover-placeholder';
+    if(cached === undefined){
+      // Already loading, or not yet started
+      if(!(key in coverCache)) fetchCover(book.title, book.author);
+      return `<div class="${placeholderClass}">📕</div>`;
+    }
+    if(!cached) return `<div class="${placeholderClass}">📕</div>`;
+    return `<img class="${imgClass}" src="${cached}" alt="" loading="lazy">`;
+  }
+  let sortMode = localStorage.getItem('library-tracker-sort') || 'due';
+  let searchTerm = '';
+  let dataLoaded = false;
+  let maxRenewals = parseInt(localStorage.getItem('library-tracker-max-renewals'), 10);
+  if(isNaN(maxRenewals) || maxRenewals < 0) maxRenewals = 3;
+
+  // ---- Google Calendar connection ----
+  const GOOGLE_CLIENT_ID = '525808175865-r0r5ba4hgftlg7s7a7mquhg0dso23doa.apps.googleusercontent.com';
+  const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+  const GCAL_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+
+  let googleTokenClient = null;
+  let googleAccessToken = null;
+  let googleTokenExpiresAt = 0;
+
+  function initGoogleClient(){
+    if(!window.google || !window.google.accounts){
+      // GIS script hasn't loaded yet — try again shortly.
+      setTimeout(initGoogleClient, 300);
+      return;
+    }
+    googleTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: CALENDAR_SCOPE,
+      callback: handleGoogleTokenResponse
+    });
+
+    // Restore a still-valid token from this browser session, if any.
+    try{
+      const saved = JSON.parse(sessionStorage.getItem('library-tracker-gcal') || 'null');
+      if(saved && saved.expiresAt > Date.now()){
+        googleAccessToken = saved.accessToken;
+        googleTokenExpiresAt = saved.expiresAt;
+      }
+    }catch(e){ /* ignore corrupt session data */ }
+    updateCalendarButton();
+  }
+
+  function handleGoogleTokenResponse(resp){
+    if(resp.error){
+      console.error('Google auth failed:', resp);
+      showToast('Could not connect Google Calendar — please try again.');
+      return;
+    }
+    googleAccessToken = resp.access_token;
+    googleTokenExpiresAt = Date.now() + (resp.expires_in * 1000);
+    sessionStorage.setItem('library-tracker-gcal', JSON.stringify({
+      accessToken: googleAccessToken,
+      expiresAt: googleTokenExpiresAt
+    }));
+    updateCalendarButton();
+  }
+
+  function isCalendarConnected(){
+    return !!googleAccessToken && googleTokenExpiresAt > Date.now();
+  }
+
+  let calendarDisconnectPending = false;
+  let calendarDisconnectTimer = null;
+
+  function handleCalendarButtonClick(){
+    if(isCalendarConnected()){
+      if(calendarDisconnectPending){
+        clearTimeout(calendarDisconnectTimer);
+        calendarDisconnectPending = false;
+        googleAccessToken = null;
+        googleTokenExpiresAt = 0;
+        sessionStorage.removeItem('library-tracker-gcal');
+        updateCalendarButton();
+        showToast('Google Calendar disconnected.');
+        return;
+      }
+      calendarDisconnectPending = true;
+      updateCalendarButton();
+      calendarDisconnectTimer = setTimeout(() => {
+        calendarDisconnectPending = false;
+        updateCalendarButton();
+      }, 4000);
+      return;
+    }
+    googleTokenClient.requestAccessToken({ prompt: 'consent' });
+  }
+
+  function updateCalendarButton(){
+    const btn = document.getElementById('calendar-btn');
+    const note = document.getElementById('calendar-note');
+    if(!btn) return;
+    if(isCalendarConnected()){
+      if(calendarDisconnectPending){
+        btn.textContent = 'Click again to disconnect';
+        btn.classList.add('confirming');
+        btn.classList.remove('connected');
+      }else{
+        btn.textContent = 'Calendar connected ✓';
+        btn.classList.add('connected');
+        btn.classList.remove('confirming');
+      }
+      note.textContent = 'Due dates are syncing to your primary Google Calendar.';
+    }else{
+      btn.textContent = 'Connect Google Calendar';
+      btn.classList.remove('connected');
+      btn.classList.remove('confirming');
+      note.textContent = 'Due dates will sync automatically once connected.';
+    }
+  }
+
+  async function gcalRequest(url, options = {}){
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${googleAccessToken}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error(`Calendar error ${res.status}: ${errText}`);
+    }
+    if(res.status === 204) return null;
+    return res.json();
+  }
+
+  // All-day event for the due date. Google's all-day "end" date is exclusive,
+  // so it needs to be the day after the due date itself.
+  function dueDateEventBody(book){
+    const start = book.dueDate;
+    const endDate = new Date(book.dueDate + 'T00:00:00');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().split('T')[0];
+    return {
+      summary: `📚 Due: ${book.title}`,
+      description: `${book.author || 'Author unknown'}${book.renewable ? ' — renewable' : ' — final loan, cannot be renewed'}`,
+      start: { date: start },
+      end: { date: end }
+    };
+  }
+
+  // Creates or updates the calendar event for a book's due date.
+  // Silently no-ops if Calendar isn't connected — never blocks the main save.
+  async function syncCalendarEvent(book){
+    if(!isCalendarConnected()) return;
+    try{
+      let eventId = book.calendarEventId;
+      if(eventId){
+        try{
+          await gcalRequest(`${GCAL_EVENTS_URL}/${eventId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(dueDateEventBody(book))
+          });
+        }catch(e){
+          // Event may have been deleted manually on the calendar side — recreate it.
+          eventId = null;
+        }
+      }
+      if(!eventId){
+        const created = await gcalRequest(GCAL_EVENTS_URL, {
+          method: 'POST',
+          body: JSON.stringify(dueDateEventBody(book))
+        });
+        eventId = created.id;
+      }
+      if(eventId !== book.calendarEventId){
+        book.calendarEventId = eventId;
+        await airtableRequest(API_URL, {
+          method: 'PATCH',
+          body: JSON.stringify({ records: [{ id: book.id, fields: { 'Calendar Event ID': eventId } }] })
+        });
+      }
+    }catch(e){
+      console.error('Calendar sync failed:', e);
+    }
+  }
+
+  // Removes the calendar event tied to a book (finished, returned, or deleted).
+  async function removeCalendarEvent(book){
+    if(!isCalendarConnected() || !book.calendarEventId) return;
+    try{
+      await gcalRequest(`${GCAL_EVENTS_URL}/${book.calendarEventId}`, { method: 'DELETE' });
+    }catch(e){
+      console.error('Calendar cleanup failed:', e);
+    }
+  }
+
+  async function airtableRequest(url, options = {}){
+    // Auth now happens inside the Worker — no token is attached client-side.
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error(`Airtable error ${res.status}: ${errText}`);
+    }
+    return res.json();
+  }
+
+  function recordToBook(record){
+    const f = record.fields || {};
+    return {
+      id: record.id,
+      title: f['Title'] || '',
+      author: f['Author'] || '',
+      borrowDate: f['Borrow Date'] || '',
+      dueDate: f['Due Date'] || '',
+      renewable: !!f['Renewable'],
+      renewCount: f['Renew Count'] || 0,
+      currentlyReading: !!f['Currently Reading'],
+      finished: !!f['Finished'],
+      finishedDate: f['Finished Date'] || '',
+      returned: !!f['Returned'],
+      wishlist: !!f['Wishlist'],
+      source: f['Source'] || '',
+      notes: f['Notes'] || '',
+      calendarEventId: f['Calendar Event ID'] || '',
+      currentPage: f['Current Page'] || 0,
+      totalPages: f['Total Pages'] || 0,
+      priority: f['Priority'] || '',
+      tags: f['Tags'] || [],
+      wishlistOrder: f['Wishlist Order'] || 0
+    };
+  }
+
+  // ---- Reading progress helpers ----
+  function progressPercent(book){
+    if(!book.totalPages || book.totalPages <= 0) return null;
+    const pct = Math.round((book.currentPage / book.totalPages) * 100);
+    return Math.max(0, Math.min(100, pct));
+  }
+
+  function progressLineText(book){
+    const pct = progressPercent(book);
+    if(pct === null) return '';
+    const d = daysUntil(book.dueDate);
+    const dayPart = d < 0
+      ? `Overdue by ${Math.abs(d)} day${Math.abs(d)===1?'':'s'}`
+      : d === 0 ? 'Due today'
+      : `${d} day${d===1?'':'s'} left`;
+    return `${dayPart} · ${pct}% read (${book.currentPage}/${book.totalPages})`;
+  }
+
+  function progressBarHtml(book, variant){
+    const pct = progressPercent(book);
+    if(pct === null) return '';
+    const trackClass = variant === 'tile' ? 'progress-track tile-track' : 'progress-track';
+    const lineClass = variant === 'tile' ? 'tile-progress-line' : 'progress-line';
+    return `
+      <div class="progress-wrap">
+        <p class="${lineClass}">${escapeHtml(progressLineText(book))}</p>
+        <div class="${trackClass}"><div class="progress-fill" style="width:${pct}%"></div></div>
+      </div>
+    `;
+  }
+
+  function toggleProgressBox(id){
+    const box = document.getElementById('progress-box-' + id);
+    if(box) box.classList.toggle('open');
+  }
+
+  async function confirmProgress(id){
+    const pageInput = document.getElementById('progress-page-' + id);
+    const totalInput = document.getElementById('progress-total-' + id);
+    let currentPage = parseInt(pageInput.value, 10);
+    let totalPages = parseInt(totalInput.value, 10);
+    if(isNaN(currentPage) || currentPage < 0) currentPage = 0;
+    if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
+    if(totalPages > 0 && currentPage > totalPages) currentPage = totalPages;
+
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Current Page': currentPage, 'Total Pages': totalPages } }] })
+      });
+      book.currentPage = currentPage;
+      book.totalPages = totalPages;
+    }catch(e){
+      console.error('Progress update failed:', e);
+      showToast('Could not save that progress — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Progress saved.');
+  }
+
+  async function loadData(){
+    try{
+      let all = [];
+      let offset = null;
+      do{
+        const url = offset ? `${API_URL}?offset=${offset}` : API_URL;
+        const data = await airtableRequest(url);
+        all = all.concat(data.records);
+        offset = data.offset;
+      }while(offset);
+      books = all.map(recordToBook);
+    }catch(e){
+      console.error('Load failed:', e);
+      document.getElementById('hero-slot').innerHTML =
+        '<div class="empty-hero">Could not load your stack — check the connection and reload.</div>';
+    }
+    dataLoaded = true;
+    render();
+  }
+
+  function daysUntil(dateStr){
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const due = new Date(dateStr + 'T00:00:00');
+    return Math.round((due - today) / (1000*60*60*24));
+  }
+
+  function fmtDate(dateStr){
+    if(!dateStr) return '—';
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function statusClass(book){
+    const d = daysUntil(book.dueDate);
+    if(!book.renewable && d <= 3) return 'status-final';
+    if(d <= 3) return 'status-soon';
+    if(d < 0) return 'status-final';
+    return 'status-ok';
+  }
+
+  async function addBook(){
+    const title = document.getElementById('f-title').value.trim();
+    const author = document.getElementById('f-author').value.trim();
+    const source = document.getElementById('f-source').value.trim();
+    const borrowDate = document.getElementById('f-borrow').value;
+    const dueDate = document.getElementById('f-due').value;
+    const renewable = document.getElementById('f-renewable').checked;
+    let totalPages = parseInt(document.getElementById('f-totalpages').value, 10);
+    if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
+
+    if(!title || !dueDate){
+      showToast('At least a title and a due date are needed to add this to the stack.');
+      return;
+    }
+
+    const fields = {
+      'Title': title,
+      'Author': author,
+      'Due Date': dueDate,
+      'Renewable': renewable,
+      'Renew Count': 0,
+      'Currently Reading': false,
+      'Finished': false,
+      'Returned': false,
+      'Current Page': 0,
+      'Total Pages': totalPages
+    };
+    if(borrowDate) fields['Borrow Date'] = borrowDate;
+    if(source) fields['Source'] = source;
+
+    try{
+      const data = await airtableRequest(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ records: [{ fields }] })
+      });
+      const newBook = recordToBook(data.records[0]);
+      books.push(newBook);
+      await syncCalendarEvent(newBook);
+    }catch(e){
+      console.error('Add failed:', e);
+      showToast('Could not save that book — check your connection and try again.');
+      return;
+    }
+
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-author').value = '';
+    document.getElementById('f-source').value = '';
+    document.getElementById('f-borrow').value = '';
+    document.getElementById('f-due').value = '';
+    document.getElementById('f-renewable').checked = true;
+    document.getElementById('f-totalpages').value = '';
+    render();
+  }
+
+  async function addWishlistBook(){
+    const title = document.getElementById('w-title').value.trim();
+    const author = document.getElementById('w-author').value.trim();
+    const source = document.getElementById('w-source').value.trim();
+    const priority = document.getElementById('w-priority').value;
+    const tags = ['w-tag-reserved','w-tag-available','w-tag-series','w-tag-recommendation']
+      .map(id => document.getElementById(id))
+      .filter(el => el.checked)
+      .map(el => el.value);
+
+    if(!title){
+      showToast('At least a title is needed to add this to your to-read list.');
+      return;
+    }
+
+    // New items go to the bottom of the manual order.
+    const maxOrder = books.filter(b => b.wishlist).reduce((m, b) => Math.max(m, b.wishlistOrder || 0), 0);
+
+    const fields = {
+      'Title': title,
+      'Author': author,
+      'Source': source,
+      'Wishlist': true,
+      'Renewable': false,
+      'Renew Count': 0,
+      'Currently Reading': false,
+      'Finished': false,
+      'Returned': false,
+      'Priority': priority || null,
+      'Tags': tags,
+      'Wishlist Order': maxOrder + 1
+    };
+
+    try{
+      const data = await airtableRequest(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ records: [{ fields }] })
+      });
+      books.push(recordToBook(data.records[0]));
+    }catch(e){
+      console.error('Add to wishlist failed:', e);
+      showToast('Could not save that — check your connection and try again.');
+      return;
+    }
+
+    document.getElementById('w-title').value = '';
+    document.getElementById('w-author').value = '';
+    document.getElementById('w-source').value = '';
+    document.getElementById('w-priority').value = '';
+    ['w-tag-reserved','w-tag-available','w-tag-series','w-tag-recommendation'].forEach(id => {
+      document.getElementById(id).checked = false;
+    });
+    render();
+  }
+
+  function toggleBorrowBox(id){
+    const box = document.getElementById('borrow-box-' + id);
+    box.classList.toggle('open');
+  }
+
+  async function confirmBorrowed(id){
+    const dueInput = document.getElementById('borrow-due-' + id);
+    const renewableInput = document.getElementById('borrow-renewable-' + id);
+    const dueDate = dueInput.value;
+    const renewable = renewableInput.checked;
+
+    if(!dueDate){
+      showToast('Enter the due date the library gave you first.');
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const book = books.find(b => b.id === id);
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          records: [{ id, fields: { 'Wishlist': false, 'Due Date': dueDate, 'Borrow Date': today, 'Renewable': renewable } }]
+        })
+      });
+      book.wishlist = false;
+      book.dueDate = dueDate;
+      book.borrowDate = today;
+      book.renewable = renewable;
+      await syncCalendarEvent(book);
+    }catch(e){
+      console.error('Confirm borrowed failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+  }
+
+  // ---- v20: wishlist priority/tags inline edit ----
+  function toggleWishlistEdit(id){
+    if(openWishlistEditIds.has(id)) openWishlistEditIds.delete(id); else openWishlistEditIds.add(id);
+    render();
+  }
+
+  async function confirmWishlistEdit(id){
+    const priority = document.getElementById('wl-edit-priority-' + id).value;
+    const tagIds = ['reserved','available','series','recommendation'];
+    const tags = tagIds
+      .map(t => ({ t, el: document.getElementById(`wl-edit-tag-${t}-${id}`) }))
+      .filter(x => x.el && x.el.checked)
+      .map(x => x.el.value);
+
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Priority': priority || null, 'Tags': tags } }] })
+      });
+      book.priority = priority;
+      book.tags = tags;
+    }catch(e){
+      console.error('Wishlist edit failed:', e);
+      showToast('Could not save those changes — check your connection and try again.');
+      return;
+    }
+    openWishlistEditIds.delete(id);
+    render();
+    showToast('Changes saved.');
+  }
+
+  // ---- v20: wishlist manual drag-to-reorder ----
+  // Reorder happens purely client-side during drag; on drop, every wishlist
+  // book gets a fresh sequential Wishlist Order value and is persisted in
+  // batches of 10 (Airtable's per-request cap).
+  let dragWishlistId = null;
+
+  function handleWishlistDragStart(e, id){
+    dragWishlistId = id;
+    e.currentTarget.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleWishlistDragEnd(e){
+    e.currentTarget.classList.remove('dragging');
+    document.querySelectorAll('.wishlist-row').forEach(el => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+  }
+
+  function handleWishlistDragOver(e, overId){
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if(overId === dragWishlistId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    e.currentTarget.classList.toggle('drag-over-top', before);
+    e.currentTarget.classList.toggle('drag-over-bottom', !before);
+  }
+
+  async function handleWishlistDrop(e, overId){
+    e.preventDefault();
+    const draggedId = dragWishlistId;
+    const before = e.currentTarget.classList.contains('drag-over-top');
+    e.currentTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+    if(!draggedId || draggedId === overId) return;
+
+    const wishlistBooks = books.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
+    const fromIdx = wishlistBooks.findIndex(b => b.id === draggedId);
+    if(fromIdx === -1) return;
+    const [moved] = wishlistBooks.splice(fromIdx, 1);
+    let toIdx = wishlistBooks.findIndex(b => b.id === overId);
+    if(toIdx === -1) toIdx = wishlistBooks.length;
+    if(!before) toIdx += 1;
+    wishlistBooks.splice(toIdx, 0, moved);
+
+    // Reassign sequential order values and persist.
+    wishlistBooks.forEach((b, i) => { b.wishlistOrder = i; });
+    render();
+
+    try{
+      for(let i = 0; i < wishlistBooks.length; i += 10){
+        const chunk = wishlistBooks.slice(i, i + 10);
+        await airtableRequest(API_URL, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            records: chunk.map(b => ({ id: b.id, fields: { 'Wishlist Order': b.wishlistOrder } }))
+          })
+        });
+      }
+    }catch(e){
+      console.error('Reorder save failed:', e);
+      showToast('Could not save the new order — check your connection and try again.');
+    }
+  }
+  // First click arms it and re-renders the button as "Confirm remove?";
+  // a second click within 4s actually deletes. Any other render() call
+  // that happens to land inside that window still reflects the pending
+  // state correctly since it's tracked here, not as a DOM class.
+  let pendingRemoveId = null;
+  let pendingRemoveTimer = null;
+
+  function requestRemoveBook(id){
+    if(pendingRemoveId === id){
+      clearTimeout(pendingRemoveTimer);
+      pendingRemoveId = null;
+      performRemoveBook(id);
+      return;
+    }
+    pendingRemoveId = id;
+    clearTimeout(pendingRemoveTimer);
+    pendingRemoveTimer = setTimeout(() => { pendingRemoveId = null; render(); }, 4000);
+    render();
+  }
+
+  async function performRemoveBook(id){
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(`${API_URL}?records[]=${id}`, { method: 'DELETE' });
+      if(book) await removeCalendarEvent(book);
+      books = books.filter(b => b.id !== id);
+    }catch(e){
+      console.error('Remove failed:', e);
+      showToast('Could not remove that book — check your connection and try again.');
+      return;
+    }
+    closeOverflowMenu();
+    render();
+    showToast('Removed.');
+  }
+
+  // ---- v21: mark finished now opens an inline date box (defaults to
+  // today, but editable) instead of stamping today's date immediately —
+  // fixes retroactively-added books all showing as finished "today".
+  function toggleFinishBox(id){
+    if(openFinishIds.has(id)) openFinishIds.delete(id); else openFinishIds.add(id);
+    openOverflowId = null;
+    render();
+  }
+
+  async function confirmFinish(id){
+    const input = document.getElementById('finish-date-' + id);
+    const finishedDate = input.value;
+    if(!finishedDate){
+      showToast('Pick the date you finished this book.');
+      return;
+    }
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          records: [{ id, fields: { 'Finished': true, 'Finished Date': finishedDate, 'Currently Reading': false } }]
+        })
+      });
+      book.finished = true;
+      book.finishedDate = finishedDate;
+      book.currentlyReading = false;
+      await removeCalendarEvent(book);
+    }catch(e){
+      console.error('Mark finished failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    openFinishIds.delete(id);
+    render();
+    showToast('Marked finished.');
+  }
+
+  async function markReturned(id){
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Returned': true } }] })
+      });
+      book.returned = true;
+    }catch(e){
+      console.error('Mark returned failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+  }
+
+  // ---- v21: undo an accidental "Finished" — moves the book back into
+  // the active stack. Clears Finished/Finished Date/Returned; leaves the
+  // due date, renew count, and progress untouched so nothing else is lost.
+  async function unfinishBook(id){
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Finished': false, 'Finished Date': null, 'Returned': false } }] })
+      });
+      book.finished = false;
+      book.finishedDate = '';
+      book.returned = false;
+    }catch(e){
+      console.error('Unfinish failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Moved back to the stack.');
+  }
+
+  // ---- v21: retroactively fix a finished date after the fact (e.g. for
+  // books logged well after actually finishing them) ----
+  async function saveFinishedDate(id){
+    const input = document.getElementById('history-date-' + id);
+    const newDate = input.value;
+    if(!newDate){
+      showToast('Pick a date first.');
+      return;
+    }
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Finished Date': newDate } }] })
+      });
+      book.finishedDate = newDate;
+    }catch(e){
+      console.error('Save finished date failed:', e);
+      showToast('Could not save that date — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Finished date updated.');
+  }
+
+  // Tracked in JS (not just a DOM class) because overflow-menu clicks
+  // trigger a render(), which rebuilds card HTML from scratch each time.
+  const openRenewIds = new Set();
+  const openEditIds = new Set();
+  const openWishlistEditIds = new Set();
+  const openFinishIds = new Set();
+
+  function toggleRenewBox(id){
+    if(openRenewIds.has(id)) openRenewIds.delete(id); else openRenewIds.add(id);
+    openOverflowId = null;
+    render();
+  }
+
+  async function confirmRenew(id){
+    const input = document.getElementById('renew-date-' + id);
+    const newDue = input.value;
+    if(!newDue){
+      showToast('Pick the new due date given by the library first.');
+      return;
+    }
+    const book = books.find(b => b.id === id);
+    const newCount = book.renewCount + 1;
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Due Date': newDue, 'Renew Count': newCount } }] })
+      });
+      book.dueDate = newDue;
+      book.renewCount = newCount;
+      await syncCalendarEvent(book);
+    }catch(e){
+      console.error('Renew failed:', e);
+      showToast('Could not save the renewal — check your connection and try again.');
+      return;
+    }
+    openRenewIds.delete(id);
+    render();
+    showToast('Renewed.');
+  }
+
+  function toggleEditBox(id){
+    if(openEditIds.has(id)) openEditIds.delete(id); else openEditIds.add(id);
+    openOverflowId = null;
+    render();
+  }
+
+  async function confirmEdit(id){
+    const title = document.getElementById('edit-title-' + id).value.trim();
+    const author = document.getElementById('edit-author-' + id).value.trim();
+    const source = document.getElementById('edit-source-' + id).value.trim();
+    const borrowDate = document.getElementById('edit-borrow-' + id).value;
+    const dueDate = document.getElementById('edit-due-' + id).value;
+    const renewable = document.getElementById('edit-renewable-' + id).checked;
+    let renewCount = parseInt(document.getElementById('edit-renewcount-' + id).value, 10);
+    let currentPage = parseInt(document.getElementById('edit-currentpage-' + id).value, 10);
+    let totalPages = parseInt(document.getElementById('edit-totalpages-' + id).value, 10);
+
+    if(!title || !dueDate){
+      showToast('A title and a due date are both needed.');
+      return;
+    }
+    if(isNaN(renewCount) || renewCount < 0) renewCount = 0;
+    if(renewCount > maxRenewals) renewCount = maxRenewals;
+    if(isNaN(currentPage) || currentPage < 0) currentPage = 0;
+    if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
+    if(totalPages > 0 && currentPage > totalPages) currentPage = totalPages;
+
+    const book = books.find(b => b.id === id);
+    const fields = {
+      'Title': title,
+      'Author': author,
+      'Source': source,
+      'Due Date': dueDate,
+      'Renewable': renewable,
+      'Renew Count': renewCount,
+      'Current Page': currentPage,
+      'Total Pages': totalPages
+    };
+    if(borrowDate) fields['Borrow Date'] = borrowDate;
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.title = title;
+      book.author = author;
+      book.source = source;
+      book.borrowDate = borrowDate;
+      book.dueDate = dueDate;
+      book.renewable = renewable;
+      book.renewCount = renewCount;
+      book.currentPage = currentPage;
+      book.totalPages = totalPages;
+      await syncCalendarEvent(book);
+    }catch(e){
+      console.error('Edit failed:', e);
+      showToast('Could not save those changes — check your connection and try again.');
+      return;
+    }
+    openEditIds.delete(id);
+    render();
+    showToast('Changes saved.');
+  }
+
+  function setSortMode(mode){
+    sortMode = mode;
+    localStorage.setItem('library-tracker-sort', mode);
+    render();
+  }
+
+  function handleSearchInput(){
+    searchTerm = document.getElementById('stack-search').value.trim().toLowerCase();
+    render();
+  }
+
+  function setMaxRenewals(value){
+    let v = parseInt(value, 10);
+    if(isNaN(v) || v < 0) v = 0;
+    maxRenewals = v;
+    localStorage.setItem('library-tracker-max-renewals', String(v));
+    document.getElementById('max-renewals-input').value = v;
+    render();
+  }
+
+  function exportBackup(){
+    const json = JSON.stringify(books, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const d = new Date();
+    a.download = `library-tracker-backup-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function toggleHistoryCollapsed(){
+    const collapsed = localStorage.getItem('library-tracker-history-collapsed') === 'true';
+    localStorage.setItem('library-tracker-history-collapsed', collapsed ? 'false' : 'true');
+    render();
+  }
+
+  async function saveNotes(id){
+    const textarea = document.getElementById('history-notes-' + id);
+    if(!textarea) return;
+    const notes = textarea.value;
+    const book = books.find(b => b.id === id);
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Notes': notes } }] })
+      });
+      if(book) book.notes = notes;
+      const savedEl = document.getElementById('history-saved-' + id);
+      if(savedEl){
+        savedEl.textContent = 'Saved.';
+        setTimeout(() => { if(savedEl) savedEl.textContent = ''; }, 2000);
+      }
+    }catch(e){
+      console.error('Save note failed:', e);
+      showToast('Could not save that note — check your connection and try again.');
+    }
+  }
+
+  const MAX_CURRENTLY_READING = 5;
+
+  async function toggleCurrentlyReading(id){
+    const book = books.find(b => b.id === id);
+    const wasReading = book.currentlyReading;
+
+    if(!wasReading){
+      const activeCount = books.filter(b => b.currentlyReading).length;
+      if(activeCount >= MAX_CURRENTLY_READING){
+        showToast(`You can only mark up to ${MAX_CURRENTLY_READING} books as currently reading at once. Stop reading one first to swap it out.`);
+        return;
+      }
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields: { 'Currently Reading': !wasReading } }] })
+      });
+      book.currentlyReading = !wasReading;
+    }catch(e){
+      console.error('Update failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+  }
+
+  function sortBooks(list){
+    const copy = [...list];
+    if(sortMode === 'title'){
+      copy.sort((a,b) => a.title.localeCompare(b.title));
+    }else if(sortMode === 'author'){
+      copy.sort((a,b) => (a.author||'').localeCompare(b.author||''));
+    }else{
+      copy.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    }
+    return copy;
+  }
+
+  function renderDots(count, total){
+    let out = '';
+    const max = total || 3;
+    for(let i=0; i<max; i++){
+      out += i < count ? '<span class="dot-on">●</span>' : '<span class="dot-off">●</span>';
+    }
+    return out;
+  }
+
+  function dueLineFor(book){
+    const d = daysUntil(book.dueDate);
+    if(d < 0) return `Overdue by ${Math.abs(d)} day${Math.abs(d)===1?'':'s'} — due ${fmtDate(book.dueDate)}`;
+    if(d === 0) return `Due today (${fmtDate(book.dueDate)})`;
+    return `Due in ${d} day${d===1?'':'s'} — ${fmtDate(book.dueDate)}`;
+  }
+
+  // ---- v20: hero fallback suggesting a top wishlist pick ----
+  function wishlistHeroHtml(book, tagText){
+    return `
+      <div class="next-up" onclick="showTab('wishlist'); toggleBorrowBox('${book.id}');" style="cursor:pointer;">
+        <div class="next-up-inner">
+          ${coverHtml(book, 'hero')}
+          <div class="next-up-text">
+            <div class="tag">${escapeHtml(tagText)}</div>
+            <h2>${escapeHtml(book.title)}</h2>
+            <div class="author">${escapeHtml(book.author || 'Author unknown')}</div>
+            <div class="due-line">From your wishlist — tap to mark as borrowed</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function render(){
+    if(!dataLoaded) return;
+    // Sync sort toolbar buttons
+    ['due','title','author'].forEach(m => {
+      document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
+    });
+    document.getElementById('stack-label').textContent =
+      sortMode === 'due' ? 'Full stack, soonest due first' :
+      sortMode === 'title' ? 'Full stack, A–Z by title' :
+      'Full stack, A–Z by author';
+    const renewalsInput = document.getElementById('max-renewals-input');
+    if(renewalsInput && document.activeElement !== renewalsInput) renewalsInput.value = maxRenewals;
+
+    const activeBooks = books.filter(b => !b.finished && !b.wishlist);
+    const wishlistBooks = books.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
+    const finishedAwaitingReturn = books.filter(b => b.finished && !b.returned);
+    const finishedCount = books.filter(b => b.finished).length;
+
+    document.getElementById('finished-counter').textContent =
+      finishedCount === 0 ? 'No books finished yet' :
+      finishedCount === 1 ? '1 book finished so far' :
+      `${finishedCount} books finished so far`;
+
+    const wishlistCountEl = document.getElementById('wishlist-tab-count');
+    if(wishlistBooks.length > 0){
+      wishlistCountEl.textContent = wishlistBooks.length;
+      wishlistCountEl.style.display = '';
+    }else{
+      wishlistCountEl.style.display = 'none';
+    }
+
+    if(activeTab === 'stats') renderStats();
+
+    const byDue = [...activeBooks].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const heroSlot = document.getElementById('hero-slot');
+    const readingBooks = activeBooks.filter(b => b.currentlyReading);
+
+    // Hero: soonest due date among active books not currently being read
+    const upcoming = byDue.filter(b => !b.currentlyReading);
+
+    if(activeBooks.length === 0){
+      if(wishlistBooks.length > 0){
+        const pick = wishlistBooks[0];
+        heroSlot.innerHTML = wishlistHeroHtml(pick, "Nothing borrowed yet — how about your top wishlist pick?");
+      }else{
+        heroSlot.innerHTML = '<div class="empty-hero">The stack is empty. Add the first book below.</div>';
+      }
+    }else if(upcoming.length === 0){
+      if(wishlistBooks.length > 0){
+        const pick = wishlistBooks[0];
+        heroSlot.innerHTML = wishlistHeroHtml(pick, "Nothing urgently due. Why not borrow next:");
+      }else{
+        heroSlot.innerHTML = '<div class="empty-hero">Everything in the stack is currently being read. Nothing else queued up yet.</div>';
+      }
+    }else{
+      const next = upcoming[0];
+      heroSlot.innerHTML = `
+        <div class="next-up">
+          <div class="next-up-inner">
+            ${coverHtml(next, 'hero')}
+            <div class="next-up-text">
+              <div class="tag">Read next</div>
+              <h2>${escapeHtml(next.title)}</h2>
+              <div class="author">${escapeHtml(next.author || 'Author unknown')}</div>
+              <div class="due-line">${dueLineFor(next)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Due-date dashboard: at-a-glance counts across every active loan
+    // (including ones currently being read — they still have a due date).
+    const dashSlot = document.getElementById('due-dashboard-slot');
+    if(activeBooks.length === 0){
+      dashSlot.innerHTML = '';
+    }else{
+      const overdueCount = activeBooks.filter(b => daysUntil(b.dueDate) < 0).length;
+      const dueTodayCount = activeBooks.filter(b => daysUntil(b.dueDate) === 0).length;
+      const dueWeekCount = activeBooks.filter(b => { const d = daysUntil(b.dueDate); return d > 0 && d <= 7; }).length;
+      const plentyCount = activeBooks.filter(b => daysUntil(b.dueDate) > 7).length;
+      dashSlot.innerHTML = `
+        <div class="due-dashboard">
+          <p class="dash-label">${activeBooks.length} active loan${activeBooks.length === 1 ? '' : 's'}</p>
+          <div class="dash-grid">
+            <div class="dash-card overdue"><div class="dash-num">${overdueCount}</div><div class="dash-lbl">Overdue</div></div>
+            <div class="dash-card due-today"><div class="dash-num">${dueTodayCount}</div><div class="dash-lbl">Due today</div></div>
+            <div class="dash-card due-week"><div class="dash-num">${dueWeekCount}</div><div class="dash-lbl">Due this week</div></div>
+            <div class="dash-card plenty"><div class="dash-num">${plentyCount}</div><div class="dash-lbl">Plenty of time</div></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Currently-reading shelf
+    const shelfEl = document.getElementById('reading-shelf');
+    if(readingBooks.length === 0){
+      shelfEl.innerHTML = '<div class="reading-shelf-empty">Nothing marked as currently reading yet — hit "Start reading" on a book below.</div>';
+    }else{
+      shelfEl.innerHTML = `<div class="reading-shelf">` + readingBooks.map(b => `
+        <div class="reading-tile">
+          <p class="tile-title">${escapeHtml(b.title)}</p>
+          <p class="tile-author">${escapeHtml(b.author || 'Author unknown')}</p>
+          ${progressPercent(b) !== null ? progressBarHtml(b, 'tile') : `<p class="tile-due">${dueLineFor(b)}</p>`}
+          <button class="tile-update-btn" onclick="toggleProgressBox('${b.id}')">Update progress</button>
+          <div class="progress-inline" id="progress-box-${b.id}">
+            <input type="number" min="0" id="progress-page-${b.id}" value="${b.currentPage || 0}" placeholder="Page">
+            <span>/</span>
+            <input type="number" min="0" id="progress-total-${b.id}" value="${b.totalPages || 0}" placeholder="Total">
+            <button onclick="confirmProgress('${b.id}')">Save</button>
+          </div>
+          <button class="tile-stop" onclick="toggleCurrentlyReading('${b.id}')">Stop reading</button>
+        </div>
+      `).join('') + `</div>`;
+    }
+
+    // Finished, awaiting return shelf
+    const returnWrap = document.getElementById('return-shelf-wrap');
+    if(finishedAwaitingReturn.length === 0){
+      returnWrap.innerHTML = '';
+    }else{
+      returnWrap.innerHTML = `
+        <p class="return-shelf-label">Finished — waiting to go back to the library</p>
+        <div class="return-shelf">
+          ${finishedAwaitingReturn.map(b => `
+            <div class="return-tile">
+              <p class="tile-title">${escapeHtml(b.title)}</p>
+              <p class="tile-author">${escapeHtml(b.author || 'Author unknown')}</p>
+              <p class="tile-finished">Finished ${fmtDate(b.finishedDate)}</p>
+              <button class="tile-returned-btn" onclick="markReturned('${b.id}')">Mark returned</button>
+              <button class="tile-unfinish-btn" onclick="unfinishBook('${b.id}')">Not finished yet</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Reading history — every finished book, with editable notes
+    const historyWrap = document.getElementById('history-wrap');
+    const finishedBooks = books.filter(b => b.finished)
+      .sort((a,b) => new Date(b.finishedDate) - new Date(a.finishedDate));
+    const historyCollapsed = localStorage.getItem('library-tracker-history-collapsed') === 'true';
+    const historyTodayStr = new Date().toISOString().split('T')[0];
+    if(finishedBooks.length === 0){
+      historyWrap.innerHTML = '';
+    }else{
+      historyWrap.innerHTML = `
+        <p class="history-label ${historyCollapsed ? 'collapsed' : ''}" onclick="toggleHistoryCollapsed()">
+          <span class="chevron">▾</span> Reading history (${finishedBooks.length})
+        </p>
+        <div class="history-list ${historyCollapsed ? 'collapsed' : ''}">
+          ${finishedBooks.map(b => `
+            <div class="history-row">
+              <div class="history-row-top">
+                <div>
+                  <p class="hr-title">${escapeHtml(b.title)}</p>
+                  <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · finished ${fmtDate(b.finishedDate)}</p>
+                </div>
+                <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
+              </div>
+              <textarea id="history-notes-${b.id}" placeholder="Add a note or short review…">${escapeHtml(b.notes)}</textarea>
+              <button class="hr-save" onclick="saveNotes('${b.id}')">Save note</button>
+              <div class="hr-saved-note" id="history-saved-${b.id}"></div>
+              <div class="hr-date-edit">
+                <label for="history-date-${b.id}">Finished date</label>
+                <input type="date" id="history-date-${b.id}" value="${b.finishedDate}" max="${historyTodayStr}">
+                <button onclick="saveFinishedDate('${b.id}')">Save date</button>
+              </div>
+              <button class="hr-unfinish" onclick="unfinishBook('${b.id}')">↩ Not finished after all — move back to stack</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // To-read wishlist
+    const wishlistEl = document.getElementById('wishlist-list');
+    if(wishlistBooks.length === 0){
+      wishlistEl.innerHTML = '<div class="wishlist-empty">Nothing on your to-read list yet — jot one down above.</div>';
+    }else{
+      const today = new Date().toISOString().split('T')[0];
+      const tagList = ['reserved','available','series','recommendation'];
+      const tagLabels = { reserved: 'Reserved', available: 'Available', series: 'Series', recommendation: 'Recommendation' };
+      wishlistEl.innerHTML = wishlistBooks.map(b => {
+        const priorityBadge = b.priority
+          ? `<span class="wl-priority priority-${b.priority.toLowerCase()}">${escapeHtml(b.priority)}</span>`
+          : '';
+        const tagsHtml = (b.tags && b.tags.length)
+          ? `<div class="wl-tags">${b.tags.map(t => `<span class="wl-tag">${escapeHtml(t)}</span>`).join('')}</div>`
+          : '';
+        return `
+        <div class="wishlist-row"
+             draggable="true"
+             ondragstart="handleWishlistDragStart(event, '${b.id}')"
+             ondragend="handleWishlistDragEnd(event)"
+             ondragover="handleWishlistDragOver(event, '${b.id}')"
+             ondrop="handleWishlistDrop(event, '${b.id}')">
+          <span class="wl-drag-handle" title="Drag to reorder">⠿</span>
+          <div class="wishlist-row-body">
+            <div class="wishlist-row-top">
+              <div>
+                <p class="wl-title">${priorityBadge}${escapeHtml(b.title)}</p>
+                <p class="wl-meta">${escapeHtml(b.author || 'Author unknown')}${b.source ? ' · from ' + escapeHtml(b.source) : ''}</p>
+                ${tagsHtml}
+              </div>
+              <div class="wl-actions">
+                <button class="btn-small" onclick="toggleBorrowBox('${b.id}')">I've borrowed this</button>
+                <button class="wl-edit-toggle" onclick="toggleWishlistEdit('${b.id}')">Edit</button>
+                <button class="btn-remove" onclick="requestRemoveBook('${b.id}')">${pendingRemoveId === b.id ? 'Confirm remove?' : 'Remove'}</button>
+              </div>
+            </div>
+            <div class="borrow-inline" id="borrow-box-${b.id}">
+              <input type="date" id="borrow-due-${b.id}" min="${today}">
+              <label><input type="checkbox" id="borrow-renewable-${b.id}" checked> Renewable</label>
+              <button onclick="confirmBorrowed('${b.id}')">Confirm — I've got it</button>
+            </div>
+            <div class="wl-edit-inline ${openWishlistEditIds.has(b.id) ? 'open' : ''}">
+              <label>Priority
+                <select id="wl-edit-priority-${b.id}" style="margin-left:6px;">
+                  <option value="" ${!b.priority ? 'selected' : ''}>None</option>
+                  <option value="High" ${b.priority === 'High' ? 'selected' : ''}>High</option>
+                  <option value="Medium" ${b.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                  <option value="Low" ${b.priority === 'Low' ? 'selected' : ''}>Low</option>
+                </select>
+              </label>
+              <div class="tag-check-group">
+                ${tagList.map(t => `
+                  <label>
+                    <input type="checkbox" id="wl-edit-tag-${t}-${b.id}" value="${tagLabels[t]}" ${(b.tags||[]).includes(tagLabels[t]) ? 'checked' : ''}>
+                    ${tagLabels[t]}
+                  </label>
+                `).join('')}
+              </div>
+              <button onclick="confirmWishlistEdit('${b.id}')">Save</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    const searched = searchTerm
+      ? activeBooks.filter(b =>
+          b.title.toLowerCase().includes(searchTerm) ||
+          (b.author || '').toLowerCase().includes(searchTerm))
+      : activeBooks;
+    const sorted = sortBooks(searched);
+    const listEl = document.getElementById('book-list');
+    if(sorted.length === 0){
+      listEl.innerHTML = searchTerm
+        ? '<div class="empty-state">No books in the stack match that search.</div>'
+        : '<div class="empty-state">No books borrowed yet — nothing to plan around.</div>';
+      return;
+    }
+
+    listEl.innerHTML = sorted.map(book => {
+      const d = daysUntil(book.dueDate);
+      const cls = statusClass(book);
+      const atLimit = book.renewCount >= maxRenewals;
+      const canRenew = book.renewable && !atLimit;
+
+      let stampHtml = '';
+      if(!book.renewable){
+        stampHtml = `<div class="stamp final">Final loan — cannot renew</div>`;
+      }else if(atLimit){
+        stampHtml = `<div class="stamp final">Max renewals reached</div>`;
+      }else{
+        stampHtml = `<div class="stamp renewable">Renewable</div>`;
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const readingBadge = book.currentlyReading ? `<div class="reading-badge">Currently reading</div>` : '';
+
+      return `
+        <div class="card ${cls} ${book.currentlyReading ? 'is-reading' : ''}">
+          <div class="card-body">
+            ${coverHtml(book, 'card')}
+            <div class="card-text">
+            ${readingBadge}
+            <p class="card-title">${escapeHtml(book.title)}</p>
+            <p class="card-author">${escapeHtml(book.author || 'Author unknown')}</p>
+            <p class="meta-line">Borrowed ${fmtDate(book.borrowDate)} · Due ${fmtDate(book.dueDate)}${book.source ? ' · from ' + escapeHtml(book.source) : ''}</p>
+            ${progressBarHtml(book, 'card')}
+            ${stampHtml}
+            <div class="dots">${renderDots(book.renewCount, maxRenewals)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
+
+            <div class="renew-inline ${openRenewIds.has(book.id) ? 'open' : ''}" id="renew-box-${book.id}">
+              <input type="date" id="renew-date-${book.id}" min="${today}">
+              <button onclick="confirmRenew('${book.id}')">Confirm renewal</button>
+            </div>
+
+            <div class="finish-inline ${openFinishIds.has(book.id) ? 'open' : ''}" id="finish-box-${book.id}">
+              <input type="date" id="finish-date-${book.id}" value="${today}" max="${today}">
+              <button onclick="confirmFinish('${book.id}')">Confirm finished</button>
+            </div>
+
+            <div class="edit-inline ${openEditIds.has(book.id) ? 'open' : ''}" id="edit-box-${book.id}">
+              <div class="edit-row">
+                <input type="text" id="edit-title-${book.id}" value="${escapeAttr(book.title)}" placeholder="Title">
+                <input type="text" id="edit-author-${book.id}" value="${escapeAttr(book.author)}" placeholder="Author">
+              </div>
+              <div class="edit-row">
+                <input type="text" id="edit-source-${book.id}" value="${escapeAttr(book.source)}" placeholder="Source (e.g. Wollongong Library)">
+                <input type="date" id="edit-borrow-${book.id}" value="${book.borrowDate}">
+              </div>
+              <div class="edit-row">
+                <input type="date" id="edit-due-${book.id}" value="${book.dueDate}">
+              </div>
+              <div class="edit-check-row">
+                <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
+                <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${book.id}" value="${book.renewCount}"></label>
+              </div>
+              <div class="edit-check-row">
+                <label>Current page <input type="number" min="0" id="edit-currentpage-${book.id}" value="${book.currentPage || 0}"></label>
+                <label>Total pages <input type="number" min="0" id="edit-totalpages-${book.id}" value="${book.totalPages || 0}"></label>
+              </div>
+              <button onclick="confirmEdit('${book.id}')">Save changes</button>
+            </div>
+            </div>
+          </div>
+          <div class="actions">
+            <div class="actions-primary">
+              <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading('${book.id}')">
+                ${book.currentlyReading ? 'Reading now' : 'Start reading'}
+              </button>
+              <button class="btn-finish" onclick="toggleFinishBox('${book.id}')">Finished</button>
+              <button class="btn-overflow" onclick="toggleOverflowMenu('${book.id}')" title="More actions">•••</button>
+            </div>
+            <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
+              <button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
+                ${atLimit ? 'Renewed ' + maxRenewals + '/' + maxRenewals : (book.renewable ? '↻ Renew' : 'Not renewable')}
+              </button>
+              <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
+              <button class="danger-item ${pendingRemoveId === book.id ? 'confirming' : ''}" onclick="requestRemoveBook('${book.id}')">
+                ${pendingRemoveId === book.id ? 'Confirm remove?' : '✕ Remove (mistake)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ---- v16: Stats tab ----
+  function renderStats(){
+    const gridEl = document.getElementById('stats-grid');
+    const extraEl = document.getElementById('stats-extra');
+    if(books.length === 0){
+      gridEl.innerHTML = '<p class="stats-empty">No data yet — add a book to see stats here.</p>';
+      extraEl.innerHTML = '';
+      return;
+    }
+
+    const finished = books.filter(b => b.finished);
+    const reading = books.filter(b => !b.finished && !b.wishlist && b.currentlyReading);
+    const wishlist = books.filter(b => b.wishlist);
+    const activeNotReading = books.filter(b => !b.finished && !b.wishlist);
+
+    const totalRenewals = books.reduce((s, b) => s + (b.renewCount || 0), 0);
+    const avgRenewals = books.length ? (totalRenewals / books.length).toFixed(1) : '0';
+
+    // Average days from borrow to finish, for finished books with both dates.
+    const durations = finished
+      .filter(b => b.borrowDate && b.finishedDate)
+      .map(b => Math.round((new Date(b.finishedDate) - new Date(b.borrowDate)) / (1000*60*60*24)))
+      .filter(d => d >= 0);
+    const avgDays = durations.length ? Math.round(durations.reduce((s,d) => s+d, 0) / durations.length) : null;
+
+    // Books finished so far this calendar year.
+    const currentYear = new Date().getFullYear();
+    const finishedThisYear = finished.filter(b => b.finishedDate && new Date(b.finishedDate).getFullYear() === currentYear).length;
+
+    // Reading streak: consecutive calendar months, counting back from the
+    // current month, with at least one book finished in each. Breaks as
+    // soon as a month with zero finishes is hit.
+    const finishedMonthSet = new Set(
+      finished.filter(b => b.finishedDate).map(b => {
+        const d = new Date(b.finishedDate);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      })
+    );
+    let readingStreak = 0;
+    let streakCursor = new Date();
+    streakCursor.setDate(1);
+    const streakKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if(!finishedMonthSet.has(streakKey(streakCursor))){
+      // This month isn't over yet — don't let an empty-so-far current
+      // month zero out a streak that's still technically alive.
+      streakCursor.setMonth(streakCursor.getMonth() - 1);
+    }
+    while(finishedMonthSet.has(streakKey(streakCursor))){
+      readingStreak++;
+      streakCursor.setMonth(streakCursor.getMonth() - 1);
+    }
+
+    gridEl.innerHTML = `
+      <div class="stats-card"><div class="big-num">${finished.length}</div><div class="big-label">Finished</div></div>
+      <div class="stats-card"><div class="big-num">${reading.length}</div><div class="big-label">Reading now</div></div>
+      <div class="stats-card"><div class="big-num">${activeNotReading.length + reading.length}</div><div class="big-label">In the stack</div></div>
+      <div class="stats-card"><div class="big-num">${wishlist.length}</div><div class="big-label">On wishlist</div></div>
+      <div class="stats-card"><div class="big-num">${avgRenewals}</div><div class="big-label">Avg renewals/book</div></div>
+      <div class="stats-card"><div class="big-num">${avgDays !== null ? avgDays : '—'}</div><div class="big-label">Avg days to finish</div></div>
+      <div class="stats-card"><div class="big-num">${finishedThisYear}</div><div class="big-label">Finished in ${currentYear}</div></div>
+      <div class="stats-card"><div class="big-num">${readingStreak}</div><div class="big-label">Month streak</div></div>
+    `;
+
+    // Top authors (by number of finished books)
+    const authorCounts = {};
+    finished.forEach(b => {
+      const a = (b.author || '').trim();
+      if(a) authorCounts[a] = (authorCounts[a] || 0) + 1;
+    });
+    const topAuthors = Object.entries(authorCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+    const topAuthorsHtml = topAuthors.length ? `
+      <div class="top-list">
+        ${topAuthors.map(([name, count], i) => `
+          <div class="top-item">
+            <span class="rank">${i+1}</span>
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="score">${count} finished</span>
+          </div>
+        `).join('')}
+      </div>` : '<p class="stats-empty">No finished books with an author yet.</p>';
+
+    // Books finished per year
+    const yearCounts = {};
+    finished.forEach(b => {
+      if(!b.finishedDate) return;
+      const y = new Date(b.finishedDate).getFullYear();
+      if(!isNaN(y)) yearCounts[y] = (yearCounts[y] || 0) + 1;
+    });
+    const years = Object.keys(yearCounts).sort();
+    const maxYearCount = Math.max(1, ...Object.values(yearCounts));
+    const yearHtml = years.length ? `
+      <div class="year-bars">
+        ${years.map(y => `
+          <div class="year-bar-row">
+            <span class="year-bar-label">${y}</span>
+            <div class="year-bar-track"><div class="year-bar-fill" style="width:${Math.round((yearCounts[y]/maxYearCount)*100)}%"></div></div>
+            <span class="year-bar-count">${yearCounts[y]}</span>
+          </div>
+        `).join('')}
+      </div>` : '<p class="stats-empty">No finished dates recorded yet.</p>';
+
+    // Most borrowed library / source — across every book that's actually
+    // been borrowed (i.e. not still sitting on the wishlist).
+    const sourceCounts = {};
+    books.filter(b => !b.wishlist).forEach(b => {
+      const s = (b.source || '').trim();
+      if(s) sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+    });
+    const topSources = Object.entries(sourceCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+    const topSourcesHtml = topSources.length ? `
+      <div class="top-list">
+        ${topSources.map(([name, count], i) => `
+          <div class="top-item">
+            <span class="rank">${i+1}</span>
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="score">${count} book${count === 1 ? '' : 's'}</span>
+          </div>
+        `).join('')}
+      </div>` : '<p class="stats-empty">No source recorded on any borrowed book yet.</p>';
+
+    extraEl.innerHTML = `
+      <div class="stats-section-title">Top authors</div>
+      ${topAuthorsHtml}
+      <div class="stats-section-title">Most borrowed from</div>
+      ${topSourcesHtml}
+      <div class="stats-section-title">Finished by year</div>
+      ${yearHtml}
+    `;
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function escapeAttr(str){
+    return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  loadData();
+  initGoogleClient();
+
+  // Offline support: cache the app shell so the tracker still opens with no
+  // signal. Live data (Airtable, calendar, covers) always needs a connection —
+  // this only makes sure the page itself loads instead of failing outright.
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(e => {
+        console.error('Service worker registration failed:', e);
+      });
+    });
+  }
+</script>
+</body>
+</html>
