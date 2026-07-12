@@ -22,6 +22,13 @@
      moved from green to grey since renewability is informational, not a
      success state; uppercase/letter-spaced labels on due-dashboard tiles,
      wishlist tag chips, and section dividers relaxed to plainer text. ---- */
+  /* ---- v27: reading experience — compact cards now show a small SVG
+     progress ring (brass fill arc) for any book currently being read with
+     a total page count set; added a reading-streak + daily-goal card at
+     the top of the Stats tab, backed by two new Airtable tables
+     (ReadingLog, Settings) proxied through the Worker's new /readinglog
+     and /settings routes, so streak/goal data is shared across devices
+     instead of living in localStorage. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&display=swap');
 
   :root{
@@ -1545,6 +1552,78 @@
   .year-bar-count{ font-size: 11px; color: #8fa0b3; width: 18px; text-align: right; flex-shrink: 0; }
   .stats-empty{ font-size: 12.5px; color: #8fa0b3; }
 
+  /* ---- v27: reading streak + daily goal card ---- */
+  .streak-goal-card{
+    background: var(--card);
+    color: var(--text-dark);
+    border-radius: 3px;
+    padding: 21px 23px;
+    margin-bottom: 20px;
+    border-left: 4px solid var(--brass);
+  }
+  .streak-row{
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .streak-flame{ margin-right: 7px; }
+  .streak-row strong{ font-family: 'Fraunces', serif; font-size: 16px; }
+  .goal-label{
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .goal-num-edit{
+    color: var(--brass);
+    font-weight: 700;
+    border-bottom: 1px dashed var(--brass);
+    cursor: pointer;
+  }
+  .goal-track{
+    height: 8px;
+    background: var(--card-line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .goal-fill{
+    height: 100%;
+    background: var(--brass);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  .goal-numbers{
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .goal-edit-inline{
+    display: none;
+    gap: 7px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--card-line);
+  }
+  .goal-edit-inline.open{ display: flex; }
+  .goal-edit-inline input[type=number]{
+    width: 70px;
+    background: #16202c;
+    border: 1px solid #3a4c62;
+    color: #f4efe2;
+    font-family: 'Courier Prime', monospace;
+    font-size: 12px;
+    padding: 7px 9px;
+    border-radius: 3px;
+  }
+  .goal-edit-inline button{
+    background: var(--brass);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 7px 12px;
+    border-radius: 3px;
+  }
+
   /* ---- v23: compact/expanded stack cards ---- */
   .btn-compact-toggle{
     font-size: 10px;
@@ -1616,6 +1695,20 @@
     white-space: nowrap;
     margin-left: auto;
     padding-left: 9px;
+  }
+  /* ---- v27: compact-card reading-progress ring ---- */
+  .compact-ring{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .compact-ring svg{ display: block; flex-shrink: 0; }
+  .compact-ring-pct{
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--brass);
+    white-space: nowrap;
   }
   .card-collapse-btn{
     font-size: 10px;
@@ -1790,6 +1883,7 @@
 
   <!-- STATS TAB -->
   <div class="tab-panel" id="tab-panel-stats">
+    <div id="stats-streak-card"></div>
     <div class="stats-grid" id="stats-grid"></div>
     <div id="stats-extra"></div>
   </div>
@@ -1877,6 +1971,11 @@
   // https://library-tracker-proxy.YOUR-SUBDOMAIN.workers.dev).
   const WORKER_URL = 'https://library-tracker-proxy.stephen-nolan85.workers.dev';
   const API_URL = WORKER_URL;
+  // ---- v27: reading streak + daily goal — backed by two new Airtable
+  // tables (ReadingLog, Settings) proxied through the same Worker, so this
+  // data is usable across devices rather than tied to localStorage. ----
+  const ACTIVITY_URL = `${WORKER_URL}/readinglog`;
+  const SETTINGS_URL = `${WORKER_URL}/settings`;
 
   // ---- v16: toast ----
   let toastTimer;
@@ -2390,6 +2489,7 @@
     if(totalPages > 0 && currentPage > totalPages) currentPage = totalPages;
 
     const book = books.find(b => b.id === id);
+    const previousPage = book.currentPage || 0;
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
@@ -2402,8 +2502,185 @@
       showToast('Could not save that progress — check your connection and try again.');
       return;
     }
+    await logReadingProgress(currentPage - previousPage);
     render();
     showToast('Progress saved.');
+  }
+
+  // ---- v27: reading streak + daily goal ----
+  let readingLog = []; // [{id, date, pagesRead}], loaded from the ReadingLog table
+  let dailyGoal = 25;
+  let dailyGoalRecordId = null;
+
+  function todayISO(){
+    return new Date().toISOString().split('T')[0];
+  }
+
+  function isoDateOffset(days){
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+  }
+
+  async function loadActivityData(){
+    try{
+      let all = [];
+      let offset = null;
+      do{
+        const url = offset ? `${ACTIVITY_URL}?offset=${offset}` : ACTIVITY_URL;
+        const data = await airtableRequest(url);
+        all = all.concat(data.records);
+        offset = data.offset;
+      }while(offset);
+      readingLog = all.map(r => ({
+        id: r.id,
+        date: r.fields['Date'] || '',
+        pagesRead: r.fields['Pages Read'] || 0
+      }));
+    }catch(e){
+      console.error('Reading log load failed:', e);
+    }
+
+    try{
+      const data = await airtableRequest(SETTINGS_URL);
+      if(data.records && data.records.length){
+        dailyGoalRecordId = data.records[0].id;
+        dailyGoal = data.records[0].fields['Daily Goal Pages'] || 25;
+      }
+    }catch(e){
+      console.error('Daily goal load failed:', e);
+    }
+
+    if(activeTab === 'stats') renderStats();
+  }
+
+  // Upserts today's ReadingLog record with a positive page delta. Wrapped
+  // the same way Calendar sync is — best-effort, never throws back to the
+  // caller, so a failure here never blocks the underlying book save.
+  async function logReadingProgress(deltaPages){
+    if(!deltaPages || deltaPages <= 0) return;
+    try{
+      const today = todayISO();
+      const entry = readingLog.find(e => e.date === today);
+      if(entry){
+        const newTotal = (entry.pagesRead || 0) + deltaPages;
+        await airtableRequest(ACTIVITY_URL, {
+          method: 'PATCH',
+          body: JSON.stringify({ records: [{ id: entry.id, fields: { 'Pages Read': newTotal } }] })
+        });
+        entry.pagesRead = newTotal;
+      }else{
+        const data = await airtableRequest(ACTIVITY_URL, {
+          method: 'POST',
+          body: JSON.stringify({ records: [{ fields: { 'Date': today, 'Pages Read': deltaPages } }] })
+        });
+        const rec = data.records[0];
+        readingLog.push({ id: rec.id, date: today, pagesRead: rec.fields['Pages Read'] || deltaPages });
+      }
+      if(activeTab === 'stats') renderStats();
+    }catch(e){
+      console.error('Reading log update failed:', e);
+    }
+  }
+
+  // Ensures today has a ReadingLog record (Pages Read: 0 if none exists) —
+  // so finishing a book without also logging a page update still counts
+  // toward the streak. Same best-effort wrapping as logReadingProgress().
+  async function ensureTodayLogEntry(){
+    try{
+      const today = todayISO();
+      if(readingLog.find(e => e.date === today)) return;
+      const data = await airtableRequest(ACTIVITY_URL, {
+        method: 'POST',
+        body: JSON.stringify({ records: [{ fields: { 'Date': today, 'Pages Read': 0 } }] })
+      });
+      const rec = data.records[0];
+      readingLog.push({ id: rec.id, date: today, pagesRead: rec.fields['Pages Read'] || 0 });
+      if(activeTab === 'stats') renderStats();
+    }catch(e){
+      console.error('Reading log entry failed:', e);
+    }
+  }
+
+  // Consecutive days (walking back from today) with a logged Pages Read > 0.
+  // If today has no record yet, the walk starts from yesterday instead, so
+  // an empty-so-far today doesn't zero out a streak that's still alive —
+  // mirrors the existing month-streak logic in renderStats().
+  function computeReadingStreak(){
+    const activeDates = new Set(readingLog.filter(e => (e.pagesRead || 0) > 0).map(e => e.date));
+    let streak = 0;
+    let offset = activeDates.has(todayISO()) ? 0 : -1;
+    while(activeDates.has(isoDateOffset(offset))){
+      streak++;
+      offset--;
+    }
+    return streak;
+  }
+
+  function todaysPagesRead(){
+    const entry = readingLog.find(e => e.date === todayISO());
+    return entry ? (entry.pagesRead || 0) : 0;
+  }
+
+  function toggleGoalEdit(){
+    const box = document.getElementById('goal-edit-box');
+    if(!box) return;
+    box.classList.toggle('open');
+    const input = document.getElementById('goal-edit-input');
+    if(input) input.value = dailyGoal;
+  }
+
+  async function confirmDailyGoal(){
+    const input = document.getElementById('goal-edit-input');
+    const value = parseInt(input.value, 10);
+    if(isNaN(value) || value <= 0){
+      showToast('Enter a positive number of pages.');
+      return;
+    }
+    try{
+      if(dailyGoalRecordId){
+        await airtableRequest(SETTINGS_URL, {
+          method: 'PATCH',
+          body: JSON.stringify({ records: [{ id: dailyGoalRecordId, fields: { 'Daily Goal Pages': value } }] })
+        });
+      }else{
+        const data = await airtableRequest(SETTINGS_URL, {
+          method: 'POST',
+          body: JSON.stringify({ records: [{ fields: { 'Daily Goal Pages': value } }] })
+        });
+        dailyGoalRecordId = data.records[0].id;
+      }
+      dailyGoal = value;
+    }catch(e){
+      console.error('Daily goal save failed:', e);
+      showToast('Could not save your daily goal — check your connection and try again.');
+      return;
+    }
+    renderStats();
+    showToast('Daily goal updated.');
+  }
+
+  // ---- v27: streak + daily-goal card, rendered at the top of the Stats tab ----
+  function renderStreakGoalCard(){
+    const el = document.getElementById('stats-streak-card');
+    if(!el) return;
+    const streak = computeReadingStreak();
+    const todayPages = todaysPagesRead();
+    const pct = dailyGoal > 0 ? Math.max(0, Math.min(100, Math.round((todayPages / dailyGoal) * 100))) : 0;
+    el.innerHTML = `
+      <div class="streak-goal-card">
+        <div class="streak-row"><span class="streak-flame">🔥</span>Reading streak: <strong>${streak} day${streak === 1 ? '' : 's'}</strong></div>
+        <div class="goal-block">
+          <div class="goal-label">Read <span class="goal-num-edit" onclick="toggleGoalEdit()" title="Tap to change your daily goal">${dailyGoal}</span> pages</div>
+          <div class="goal-track"><div class="goal-fill" style="width:${pct}%"></div></div>
+          <div class="goal-numbers">${todayPages} / ${dailyGoal}</div>
+        </div>
+        <div class="goal-edit-inline" id="goal-edit-box">
+          <input type="number" min="1" id="goal-edit-input" value="${dailyGoal}">
+          <button onclick="confirmDailyGoal()">Save</button>
+        </div>
+      </div>
+    `;
   }
 
   async function loadData(){
@@ -2765,6 +3042,7 @@
       book.finishedDate = finishedDate;
       book.currentlyReading = false;
       await removeCalendarEvent(book);
+      await ensureTodayLogEntry();
     }catch(e){
       console.error('Mark finished failed:', e);
       showToast('Could not update that — check your connection and try again.');
@@ -2906,6 +3184,7 @@
     if(totalPages > 0 && currentPage > totalPages) currentPage = totalPages;
 
     const book = books.find(b => b.id === id);
+    const previousPage = book.currentPage || 0;
     const fields = {
       'Title': title,
       'Author': author,
@@ -2938,6 +3217,7 @@
       showToast('Could not save those changes — check your connection and try again.');
       return;
     }
+    await logReadingProgress(currentPage - previousPage);
     openEditIds.delete(id);
     render();
     showToast('Changes saved.');
@@ -3390,6 +3670,36 @@
     listEl.innerHTML = sorted.map(book => effectiveCompact(book.id) ? renderCompactCard(book) : renderExpandedCard(book)).join('');
   }
 
+  // ---- v27: small SVG progress ring for compact cards — shown only for
+  // books currently being read with a total page count set. Reuses
+  // progressPercent() rather than recomputing the fraction.
+  function compactProgressRingHtml(book){
+    if(!book.currentlyReading || !book.totalPages || book.totalPages <= 0) return '';
+    const pct = progressPercent(book);
+    if(pct === null) return '';
+    const size = 22, stroke = 2.5;
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const offset = c * (1 - pct / 100);
+    return `
+      <span class="compact-ring" title="${pct}% read">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--card-line)" stroke-width="${stroke}"></circle>
+          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="url(#ring-gradient-${book.id})" stroke-width="${stroke}"
+            stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${offset}"
+            transform="rotate(-90 ${size/2} ${size/2})"></circle>
+          <defs>
+            <linearGradient id="ring-gradient-${book.id}" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="var(--brass)"></stop>
+              <stop offset="100%" stop-color="var(--brass-bright)"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="compact-ring-pct">${pct}%</span>
+      </span>
+    `;
+  }
+
   // ---- v23: compact card — title, author, and a due-date status dot only.
   // Tapping anywhere on it expands that one card back to full detail.
   function renderCompactCard(book){
@@ -3402,6 +3712,7 @@
             <span class="compact-title">${escapeHtml(book.title)}</span>
             <span class="compact-author">${escapeHtml(book.author || 'Author unknown')}</span>
           </div>
+          ${compactProgressRingHtml(book)}
           <span class="compact-due">${fmtDate(book.dueDate)}</span>
         </div>
       </div>
@@ -3508,6 +3819,7 @@
 
   // ---- v16: Stats tab ----
   function renderStats(){
+    renderStreakGoalCard();
     const gridEl = document.getElementById('stats-grid');
     const extraEl = document.getElementById('stats-extra');
     if(books.length === 0){
@@ -3647,6 +3959,7 @@
   }
 
   loadData();
+  loadActivityData();
   initGoogleClient();
   initHeroObserver();
 
