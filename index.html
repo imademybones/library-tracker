@@ -236,17 +236,6 @@
     align-items: flex-end;
     gap: 6px;
   }
-  .hero-edit-btn{
-    font-size: 9.5px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    padding: 5px 9px;
-    border-radius: 3px;
-    background: #fff;
-    border: 1.5px solid #dcdcdc;
-    color: var(--ink-soft);
-  }
-  .hero-edit-btn:hover{ border-color: var(--accent); color: var(--accent); }
   .next-up .edit-inline{ margin-top: 16px; }
   /* Signature due-date "ticket stamp" — the one deliberately decorative
      flourish in an otherwise minimal design. */
@@ -4296,34 +4285,12 @@
                 </div>
                 <div class="hero-top-right">
                   ${dueStampHtml(next.dueDate)}
-                  <button class="hero-edit-btn" onclick="toggleEditBox('${next.id}')">✎ Edit</button>
                 </div>
               </div>
               <div class="due-line">${dueBadgeHtml(next)}</div>
             </div>
           </div>
-          <div class="edit-inline ${openEditIds.has(next.id) ? 'open' : ''}" id="edit-box-${next.id}">
-            <div class="edit-row">
-              <input type="text" id="edit-title-${next.id}" value="${escapeAttr(next.title)}" placeholder="Title">
-              <input type="text" id="edit-author-${next.id}" value="${escapeAttr(next.author)}" placeholder="Author">
-            </div>
-            <div class="edit-row">
-              ${sourceFieldHtml('edit-source-' + next.id, next.source)}
-              <input type="date" id="edit-borrow-${next.id}" value="${next.borrowDate}">
-            </div>
-            <div class="edit-row">
-              <input type="date" id="edit-due-${next.id}" value="${next.dueDate}">
-            </div>
-            <div class="edit-check-row">
-              <label><input type="checkbox" id="edit-renewable-${next.id}" ${next.renewable ? 'checked' : ''}> Renewable</label>
-              <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${next.id}" value="${next.renewCount}"></label>
-            </div>
-            <div class="edit-check-row">
-              <label>Current page <input type="number" min="0" id="edit-currentpage-${next.id}" value="${next.currentPage || 0}"></label>
-              <label>Total pages <input type="number" min="0" id="edit-totalpages-${next.id}" value="${next.totalPages || 0}"></label>
-            </div>
-            <button onclick="confirmEdit('${next.id}')">Save changes</button>
-          </div>
+          ${renderCardActionBlock(next, { showCompactToggle: false })}
         </div>
       `, 'book:' + next.id);
     }
@@ -4645,11 +4612,89 @@
     `;
   }
 
+  // ---- v35: shared actions + inline-boxes markup, used by both the
+  // regular expanded card and the "Up Next" hero card so the two can't
+  // drift apart again (hero got Edit-only in v34; now gets the full set).
+  // showCompactToggle is false in the hero context, where there's no
+  // compact/expanded state to toggle until the book leaves the hero slot.
+  //
+  // Returns { inlineBoxesHtml, actionsHtml } rather than one flat string:
+  // on a regular card the renew/finish/edit inline boxes live inside
+  // card-text (the wide content column) while actions sits in its own
+  // grid column, so callers that need that split (renderExpandedCard)
+  // place the two pieces separately. The hero isn't a grid, so it just
+  // concatenates both pieces back together.
+  function renderCardActionBlock(book, opts = {}){
+    const showCompactToggle = opts.showCompactToggle !== false;
+    const today = new Date().toISOString().split('T')[0];
+    const atLimit = book.renewCount >= maxRenewals;
+    const canRenew = book.renewable && !atLimit;
+
+    const inlineBoxesHtml = `
+      <div class="renew-inline ${openRenewIds.has(book.id) ? 'open' : ''}" id="renew-box-${book.id}">
+        <input type="date" id="renew-date-${book.id}" min="${today}">
+        <button onclick="confirmRenew('${book.id}')">Confirm renewal</button>
+      </div>
+
+      <div class="finish-inline ${openFinishIds.has(book.id) ? 'open' : ''}" id="finish-box-${book.id}">
+        <input type="date" id="finish-date-${book.id}" value="${today}" max="${today}">
+        <button onclick="confirmFinish('${book.id}')">Confirm finished</button>
+      </div>
+
+      <div class="edit-inline ${openEditIds.has(book.id) ? 'open' : ''}" id="edit-box-${book.id}">
+        <div class="edit-row">
+          <input type="text" id="edit-title-${book.id}" value="${escapeAttr(book.title)}" placeholder="Title">
+          <input type="text" id="edit-author-${book.id}" value="${escapeAttr(book.author)}" placeholder="Author">
+        </div>
+        <div class="edit-row">
+          ${sourceFieldHtml('edit-source-' + book.id, book.source)}
+          <input type="date" id="edit-borrow-${book.id}" value="${book.borrowDate}">
+        </div>
+        <div class="edit-row">
+          <input type="date" id="edit-due-${book.id}" value="${book.dueDate}">
+        </div>
+        <div class="edit-check-row">
+          <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
+          <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${book.id}" value="${book.renewCount}"></label>
+        </div>
+        <div class="edit-check-row">
+          <label>Current page <input type="number" min="0" id="edit-currentpage-${book.id}" value="${book.currentPage || 0}"></label>
+          <label>Total pages <input type="number" min="0" id="edit-totalpages-${book.id}" value="${book.totalPages || 0}"></label>
+        </div>
+        <button onclick="confirmEdit('${book.id}')">Save changes</button>
+      </div>
+    `;
+
+    const actionsHtml = `
+      <div class="actions">
+        <div class="actions-primary">
+          <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading('${book.id}')">
+            ${book.currentlyReading ? 'Reading now' : 'Start reading'}
+          </button>
+          <button class="btn-finish" onclick="toggleFinishBox('${book.id}')">Finished</button>
+          <button class="btn-overflow" onclick="toggleOverflowMenu('${book.id}')" title="More actions">•••</button>
+        </div>
+        <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
+          <button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
+            ${atLimit ? 'Renewed ' + maxRenewals + '/' + maxRenewals : (book.renewable ? '↻ Renew' : 'Not renewable')}
+          </button>
+          <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
+          ${showCompactToggle ? `<button onclick="toggleCardCompact('${book.id}')">⊟ Compact view</button>` : ''}
+          <button class="danger-item" onclick="requestRemoveBook('${book.id}')">
+            ✕ Remove (mistake)
+          </button>
+        </div>
+      </div>
+    `;
+
+    if(opts.parts) return { inlineBoxesHtml, actionsHtml };
+    return inlineBoxesHtml + actionsHtml;
+  }
+
   function renderExpandedCard(book){
       const d = daysUntil(book.dueDate);
       const cls = statusClass(book);
       const atLimit = book.renewCount >= maxRenewals;
-      const canRenew = book.renewable && !atLimit;
 
       let stampHtml = '';
       if(!book.renewable){
@@ -4660,8 +4705,8 @@
         stampHtml = `<div class="stamp renewable">Renewable</div>`;
       }
 
-      const today = new Date().toISOString().split('T')[0];
       const readingBadge = book.currentlyReading ? `<div class="reading-badge">Currently reading</div>` : '';
+      const { inlineBoxesHtml, actionsHtml } = renderCardActionBlock(book, { parts: true });
 
       return `
         <div class="card ${cls} ${book.currentlyReading ? 'is-reading' : ''}" data-flip-key="${book.id}">
@@ -4685,60 +4730,10 @@
             ` : ''}
             ${stampHtml}
             <div class="dots">${renderDots(book.renewCount, maxRenewals)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
-
-            <div class="renew-inline ${openRenewIds.has(book.id) ? 'open' : ''}" id="renew-box-${book.id}">
-              <input type="date" id="renew-date-${book.id}" min="${today}">
-              <button onclick="confirmRenew('${book.id}')">Confirm renewal</button>
-            </div>
-
-            <div class="finish-inline ${openFinishIds.has(book.id) ? 'open' : ''}" id="finish-box-${book.id}">
-              <input type="date" id="finish-date-${book.id}" value="${today}" max="${today}">
-              <button onclick="confirmFinish('${book.id}')">Confirm finished</button>
-            </div>
-
-            <div class="edit-inline ${openEditIds.has(book.id) ? 'open' : ''}" id="edit-box-${book.id}">
-              <div class="edit-row">
-                <input type="text" id="edit-title-${book.id}" value="${escapeAttr(book.title)}" placeholder="Title">
-                <input type="text" id="edit-author-${book.id}" value="${escapeAttr(book.author)}" placeholder="Author">
-              </div>
-              <div class="edit-row">
-                ${sourceFieldHtml('edit-source-' + book.id, book.source)}
-                <input type="date" id="edit-borrow-${book.id}" value="${book.borrowDate}">
-              </div>
-              <div class="edit-row">
-                <input type="date" id="edit-due-${book.id}" value="${book.dueDate}">
-              </div>
-              <div class="edit-check-row">
-                <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
-                <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${book.id}" value="${book.renewCount}"></label>
-              </div>
-              <div class="edit-check-row">
-                <label>Current page <input type="number" min="0" id="edit-currentpage-${book.id}" value="${book.currentPage || 0}"></label>
-                <label>Total pages <input type="number" min="0" id="edit-totalpages-${book.id}" value="${book.totalPages || 0}"></label>
-              </div>
-              <button onclick="confirmEdit('${book.id}')">Save changes</button>
-            </div>
+            ${inlineBoxesHtml}
             </div>
           </div>
-          <div class="actions">
-            <div class="actions-primary">
-              <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading('${book.id}')">
-                ${book.currentlyReading ? 'Reading now' : 'Start reading'}
-              </button>
-              <button class="btn-finish" onclick="toggleFinishBox('${book.id}')">Finished</button>
-              <button class="btn-overflow" onclick="toggleOverflowMenu('${book.id}')" title="More actions">•••</button>
-            </div>
-            <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
-              <button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
-                ${atLimit ? 'Renewed ' + maxRenewals + '/' + maxRenewals : (book.renewable ? '↻ Renew' : 'Not renewable')}
-              </button>
-              <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
-              <button onclick="toggleCardCompact('${book.id}')">⊟ Compact view</button>
-              <button class="danger-item" onclick="requestRemoveBook('${book.id}')">
-                ✕ Remove (mistake)
-              </button>
-            </div>
-          </div>
+          ${actionsHtml}
         </div>
       `;
   }
