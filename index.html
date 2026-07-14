@@ -230,6 +230,24 @@
     align-items: flex-start;
     gap: 12px;
   }
+  .hero-top-right{
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .hero-edit-btn{
+    font-size: 9.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 5px 9px;
+    border-radius: 3px;
+    background: #fff;
+    border: 1.5px solid #dcdcdc;
+    color: var(--ink-soft);
+  }
+  .hero-edit-btn:hover{ border-color: var(--accent); color: var(--accent); }
+  .next-up .edit-inline{ margin-top: 16px; }
   /* Signature due-date "ticket stamp" — the one deliberately decorative
      flourish in an otherwise minimal design. */
   .due-stamp{
@@ -411,7 +429,7 @@
     text-transform: uppercase;
     color: var(--muted);
     font-weight: 600;
-    margin: 0 0 12px;
+    margin: 28px 0 12px;
   }
   .return-shelf{
     display: flex;
@@ -4276,10 +4294,35 @@
                   <h2>${escapeHtml(next.title)}</h2>
                   <div class="author">${escapeHtml(next.author || 'Author unknown')}</div>
                 </div>
-                ${dueStampHtml(next.dueDate)}
+                <div class="hero-top-right">
+                  ${dueStampHtml(next.dueDate)}
+                  <button class="hero-edit-btn" onclick="toggleEditBox('${next.id}')">✎ Edit</button>
+                </div>
               </div>
               <div class="due-line">${dueBadgeHtml(next)}</div>
             </div>
+          </div>
+          <div class="edit-inline ${openEditIds.has(next.id) ? 'open' : ''}" id="edit-box-${next.id}">
+            <div class="edit-row">
+              <input type="text" id="edit-title-${next.id}" value="${escapeAttr(next.title)}" placeholder="Title">
+              <input type="text" id="edit-author-${next.id}" value="${escapeAttr(next.author)}" placeholder="Author">
+            </div>
+            <div class="edit-row">
+              ${sourceFieldHtml('edit-source-' + next.id, next.source)}
+              <input type="date" id="edit-borrow-${next.id}" value="${next.borrowDate}">
+            </div>
+            <div class="edit-row">
+              <input type="date" id="edit-due-${next.id}" value="${next.dueDate}">
+            </div>
+            <div class="edit-check-row">
+              <label><input type="checkbox" id="edit-renewable-${next.id}" ${next.renewable ? 'checked' : ''}> Renewable</label>
+              <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${next.id}" value="${next.renewCount}"></label>
+            </div>
+            <div class="edit-check-row">
+              <label>Current page <input type="number" min="0" id="edit-currentpage-${next.id}" value="${next.currentPage || 0}"></label>
+              <label>Total pages <input type="number" min="0" id="edit-totalpages-${next.id}" value="${next.totalPages || 0}"></label>
+            </div>
+            <button onclick="confirmEdit('${next.id}')">Save changes</button>
           </div>
         </div>
       `, 'book:' + next.id);
