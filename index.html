@@ -58,6 +58,13 @@
      fixed accent replaces it — flag to Stephen if a seasonal variant of
      the new accent is wanted). Purely visual/styling — no functional, data
      model, Airtable, or Worker changes. ---- */
+  /* ---- v36: offline write queue — a genuine network failure (no signal,
+     worker unreachable) on any write now queues the change instead of
+     discarding it, keeps the optimistic local update, and shows a small
+     quiet "⟳" badge on the affected card (tap to retry). The queue
+     auto-replays in order on reconnect and on app start. Books added while
+     offline get a temporary local id until their queued POST syncs. Purely
+     additive — no visual changes to the synced-and-online path. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -1078,6 +1085,7 @@
     align-items: start;
     border-bottom: 1px solid var(--line);
     transition: background 0.15s ease;
+    position: relative;
   }
   .card.status-ok,
   .card.status-soon,
@@ -1086,6 +1094,32 @@
   /* ---- v30: tap feedback (kept subtle now there's no card box to lift) ---- */
   .card:active{ background: var(--neutral-fill); }
   .card.is-reading:active{ background: var(--neutral-fill); }
+
+  /* ---- v36: offline write queue — quiet "not yet synced" badge, tap to
+     retry. Deliberately understated (this is a passive background retry,
+     not an error state) — same muted ink as the rest of the meta text. ---- */
+  .pending-badge{
+    position: absolute;
+    top: 16px;
+    right: 0;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--ink-soft);
+    opacity: 0.55;
+    cursor: pointer;
+    padding: 4px;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+  .pending-badge:hover{ opacity: 1; color: var(--accent); }
+  .next-up .pending-badge{ top: 0; }
+  .wl-pending-badge{
+    font-size: 12px;
+    color: var(--ink-soft);
+    opacity: 0.6;
+    cursor: pointer;
+    margin-left: 5px;
+  }
+  .wl-pending-badge:hover{ opacity: 1; color: var(--accent); }
 
   .reading-badge{
     display: inline-flex;
@@ -3102,20 +3136,136 @@
     }
   }
 
+  // ---- v36: offline write queue — distinguishes a network-level failure
+  // (fetch() itself threw, e.g. no signal / worker unreachable) from a real
+  // HTTP error response, so callers can queue the former and keep failing
+  // loudly on the latter. ----
   async function airtableRequest(url, options = {}){
     // Auth now happens inside the Worker — no token is attached client-side.
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-      }
-    });
+    let res;
+    try{
+      res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {})
+        }
+      });
+    }catch(networkErr){
+      const err = new Error('Network failure: ' + networkErr.message);
+      err.isNetworkFailure = true;
+      throw err;
+    }
     if(!res.ok){
       const errText = await res.text();
       throw new Error(`Airtable error ${res.status}: ${errText}`);
     }
     return res.json();
+  }
+
+  // ---- v36: offline write queue — persisted so a queued write survives a
+  // reload while offline. Each entry is a single Airtable request replayed
+  // in order once connectivity returns; see flushQueue(). ----
+  const WRITE_QUEUE_KEY = 'library-tracker-write-queue';
+
+  function loadQueue(){
+    try{
+      return JSON.parse(localStorage.getItem(WRITE_QUEUE_KEY)) || [];
+    }catch(e){
+      return [];
+    }
+  }
+
+  function saveQueue(queue){
+    localStorage.setItem(WRITE_QUEUE_KEY, JSON.stringify(queue));
+  }
+
+  function enqueue(entry){
+    const queue = loadQueue();
+    queue.push(entry);
+    saveQueue(queue);
+  }
+
+  // Convenience wrapper around enqueue() that fills in queueId/createdAt —
+  // every write-function call site only needs to supply what's specific to
+  // that write.
+  function enqueueWrite({ url, method, body, recordId, tempId, description }){
+    enqueue({
+      queueId: 'q-' + crypto.randomUUID(),
+      url,
+      method,
+      body: body || null,
+      recordId: recordId || null,
+      tempId: tempId || null,
+      description,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  function isTempId(id){
+    return typeof id === 'string' && id.startsWith('temp-');
+  }
+
+  function dequeue(queueId){
+    saveQueue(loadQueue().filter(e => e.queueId !== queueId));
+  }
+
+  // Book ids (real or temp) that have at least one write still pending sync
+  // — used to decide which cards get a pending badge.
+  function getPendingBookIds(){
+    const ids = new Set();
+    loadQueue().forEach(e => {
+      if(e.recordId) ids.add(e.recordId);
+      if(e.tempId) ids.add(e.tempId);
+    });
+    return ids;
+  }
+
+  // temp id -> real Airtable id, resolved as queued POSTs sync successfully.
+  // In-memory only (for this session) — a reload re-reads books fresh from
+  // Airtable, so a temp id only needs to resolve within one session's life.
+  let tempIdMap = {};
+
+  let isFlushingQueue = false;
+
+  async function flushQueue(){
+    if(isFlushingQueue) return;
+    isFlushingQueue = true;
+    const queue = loadQueue();
+    for(const entry of [...queue]){
+      try{
+        let url = entry.url;
+        let body = entry.body;
+        if(entry.recordId && entry.recordId.startsWith('temp-')){
+          const resolved = tempIdMap[entry.recordId];
+          if(!resolved) continue; // still waiting on its own POST to sync first
+          url = url.replaceAll(entry.recordId, resolved);
+          if(body) body = body.replaceAll(entry.recordId, resolved);
+        }
+        const data = await airtableRequest(url, { method: entry.method, body });
+        if(entry.method === 'POST' && entry.tempId){
+          const realId = data.records[0].id;
+          tempIdMap[entry.tempId] = realId;
+          const book = books.find(b => b.id === entry.tempId);
+          if(book) book.id = realId;
+        }
+        dequeue(entry.queueId);
+        const syncedId = entry.recordId
+          ? (tempIdMap[entry.recordId] || entry.recordId)
+          : (entry.tempId ? tempIdMap[entry.tempId] : null);
+        const syncedBook = syncedId ? books.find(b => b.id === syncedId) : null;
+        if(syncedBook) syncCalendarEvent(syncedBook).catch(()=>{});
+      }catch(e){
+        if(e.isNetworkFailure){
+          break; // still offline — stop, leave remaining items queued, try again later
+        }else{
+          dequeue(entry.queueId);
+          showToast(`Couldn't sync "${entry.description}" — please redo that change.`);
+        }
+      }
+    }
+    isFlushingQueue = false;
+    render();
   }
 
   function recordToBook(record){
@@ -3191,14 +3341,35 @@
 
     const book = books.find(b => b.id === id);
     const previousPage = book.currentPage || 0;
+    const fields = { 'Current Page': currentPage, 'Total Pages': totalPages };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Progress — ${book.title}` });
+      book.currentPage = currentPage;
+      book.totalPages = totalPages;
+      await logReadingProgress(currentPage - previousPage);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Current Page': currentPage, 'Total Pages': totalPages } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.currentPage = currentPage;
       book.totalPages = totalPages;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Progress — ${book.title}` });
+        book.currentPage = currentPage;
+        book.totalPages = totalPages;
+        await logReadingProgress(currentPage - previousPage);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Progress update failed:', e);
       showToast('Could not save that progress — check your connection and try again.');
       return;
@@ -3436,6 +3607,7 @@
     dataLoaded = true;
     render();
     maybeShowAnnualWrapup();
+    flushQueue();
   }
 
   function daysUntil(dateStr){
@@ -3510,9 +3682,22 @@
       await syncCalendarEvent(newBook);
       rememberLastSource(source);
     }catch(e){
-      console.error('Add failed:', e);
-      showToast('Could not save that book — check your connection and try again.');
-      return;
+      if(e.isNetworkFailure){
+        const tempId = 'temp-' + crypto.randomUUID();
+        books.push(recordToBook({ id: tempId, fields }));
+        enqueueWrite({
+          url: API_URL,
+          method: 'POST',
+          body: JSON.stringify({ records: [{ fields }] }),
+          tempId,
+          description: `Add — ${title}`
+        });
+        rememberLastSource(source);
+      }else{
+        console.error('Add failed:', e);
+        showToast('Could not save that book — check your connection and try again.');
+        return;
+      }
     }
 
     document.getElementById('f-title').value = '';
@@ -3568,9 +3753,22 @@
       books.push(recordToBook(data.records[0]));
       rememberLastSource(source);
     }catch(e){
-      console.error('Add to wishlist failed:', e);
-      showToast('Could not save that — check your connection and try again.');
-      return;
+      if(e.isNetworkFailure){
+        const tempId = 'temp-' + crypto.randomUUID();
+        books.push(recordToBook({ id: tempId, fields }));
+        enqueueWrite({
+          url: API_URL,
+          method: 'POST',
+          body: JSON.stringify({ records: [{ fields }] }),
+          tempId,
+          description: `Add to wishlist — ${title}`
+        });
+        rememberLastSource(source);
+      }else{
+        console.error('Add to wishlist failed:', e);
+        showToast('Could not save that — check your connection and try again.');
+        return;
+      }
     }
 
     document.getElementById('w-title').value = '';
@@ -3602,13 +3800,23 @@
     const today = new Date().toISOString().split('T')[0];
     const book = books.find(b => b.id === id);
     const prevRenewable = book.renewable;
+    const fields = { 'Wishlist': false, 'Due Date': dueDate, 'Borrow Date': today, 'Renewable': renewable };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Confirm borrowed — ${book.title}` });
+      book.wishlist = false;
+      book.dueDate = dueDate;
+      book.borrowDate = today;
+      book.renewable = renewable;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
 
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({
-          records: [{ id, fields: { 'Wishlist': false, 'Due Date': dueDate, 'Borrow Date': today, 'Renewable': renewable } }]
-        })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.wishlist = false;
       book.dueDate = dueDate;
@@ -3616,6 +3824,16 @@
       book.renewable = renewable;
       await syncCalendarEvent(book);
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Confirm borrowed — ${book.title}` });
+        book.wishlist = false;
+        book.dueDate = dueDate;
+        book.borrowDate = today;
+        book.renewable = renewable;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Confirm borrowed failed:', e);
       showToast('Could not update that — check your connection and try again.');
       return;
@@ -3663,14 +3881,35 @@
       .map(x => x.el.value);
 
     const book = books.find(b => b.id === id);
+    const fields = { 'Priority': priority || null, 'Tags': tags };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Wishlist edit — ${book.title}` });
+      book.priority = priority;
+      book.tags = tags;
+      openWishlistEditIds.delete(id);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Priority': priority || null, 'Tags': tags } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.priority = priority;
       book.tags = tags;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Wishlist edit — ${book.title}` });
+        book.priority = priority;
+        book.tags = tags;
+        openWishlistEditIds.delete(id);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Wishlist edit failed:', e);
       showToast('Could not save those changes — check your connection and try again.');
       return;
@@ -3772,11 +4011,27 @@
   async function finalizeRemoveBook(id){
     pendingDeleteTimers.delete(id);
     const book = books.find(b => b.id === id);
+
+    if(isTempId(id)){
+      enqueueWrite({ url: `${API_URL}?records[]=${id}`, method: 'DELETE', recordId: id, description: `Remove — ${book ? book.title : id}` });
+      books = books.filter(b => b.id !== id);
+      pendingDeleteIds.delete(id);
+      render();
+      return;
+    }
+
     try{
       await airtableRequest(`${API_URL}?records[]=${id}`, { method: 'DELETE' });
       if(book) await removeCalendarEvent(book);
       books = books.filter(b => b.id !== id);
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: `${API_URL}?records[]=${id}`, method: 'DELETE', recordId: id, description: `Remove — ${book ? book.title : id}` });
+        books = books.filter(b => b.id !== id);
+        pendingDeleteIds.delete(id);
+        render();
+        return;
+      }
       console.error('Remove failed:', e);
       // The delete never actually happened — bring it back into view.
       pendingDeleteIds.delete(id);
@@ -3805,12 +4060,25 @@
       return;
     }
     const book = books.find(b => b.id === id);
+    const fields = { 'Finished': true, 'Finished Date': finishedDate, 'Currently Reading': false };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark finished — ${book.title}` });
+      book.finished = true;
+      book.finishedDate = finishedDate;
+      book.currentlyReading = false;
+      await ensureTodayLogEntry();
+      openFinishIds.delete(id);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      if(!checkMilestone()) triggerConfetti();
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({
-          records: [{ id, fields: { 'Finished': true, 'Finished Date': finishedDate, 'Currently Reading': false } }]
-        })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.finished = true;
       book.finishedDate = finishedDate;
@@ -3818,6 +4086,18 @@
       await removeCalendarEvent(book);
       await ensureTodayLogEntry();
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark finished — ${book.title}` });
+        book.finished = true;
+        book.finishedDate = finishedDate;
+        book.currentlyReading = false;
+        await ensureTodayLogEntry();
+        openFinishIds.delete(id);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        if(!checkMilestone()) triggerConfetti();
+        return;
+      }
       console.error('Mark finished failed:', e);
       showToast('Could not update that — check your connection and try again.');
       return;
@@ -3830,13 +4110,30 @@
 
   async function markReturned(id){
     const book = books.find(b => b.id === id);
+    const fields = { 'Returned': true };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark returned — ${book.title}` });
+      book.returned = true;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Returned': true } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.returned = true;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark returned — ${book.title}` });
+        book.returned = true;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Mark returned failed:', e);
       showToast('Could not update that — check your connection and try again.');
       return;
@@ -3849,13 +4146,30 @@
   async function undoReturned(id){
     const book = books.find(b => b.id === id);
     if(!book) return;
+    const fields = { 'Returned': false };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo return — ${book.title}` });
+      book.returned = false;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Returned': false } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.returned = false;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo return — ${book.title}` });
+        book.returned = false;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Undo return failed:', e);
       showToast('Could not undo that — check your connection and try again.');
       return;
@@ -3869,15 +4183,36 @@
   // due date, renew count, and progress untouched so nothing else is lost.
   async function unfinishBook(id){
     const book = books.find(b => b.id === id);
+    const fields = { 'Finished': false, 'Finished Date': null, 'Returned': false };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Unfinish — ${book.title}` });
+      book.finished = false;
+      book.finishedDate = '';
+      book.returned = false;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Finished': false, 'Finished Date': null, 'Returned': false } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.finished = false;
       book.finishedDate = '';
       book.returned = false;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Unfinish — ${book.title}` });
+        book.finished = false;
+        book.finishedDate = '';
+        book.returned = false;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Unfinish failed:', e);
       showToast('Could not update that — check your connection and try again.');
       return;
@@ -3896,13 +4231,30 @@
       return;
     }
     const book = books.find(b => b.id === id);
+    const fields = { 'Finished Date': newDate };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Finished date — ${book.title}` });
+      book.finishedDate = newDate;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Finished Date': newDate } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.finishedDate = newDate;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Finished date — ${book.title}` });
+        book.finishedDate = newDate;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Save finished date failed:', e);
       showToast('Could not save that date — check your connection and try again.');
       return;
@@ -3935,15 +4287,36 @@
     const prevDue = book.dueDate;
     const prevCount = book.renewCount;
     const newCount = book.renewCount + 1;
+    const fields = { 'Due Date': newDue, 'Renew Count': newCount };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Renew — ${book.title}` });
+      book.dueDate = newDue;
+      book.renewCount = newCount;
+      openRenewIds.delete(id);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Due Date': newDue, 'Renew Count': newCount } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.dueDate = newDue;
       book.renewCount = newCount;
       await syncCalendarEvent(book);
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Renew — ${book.title}` });
+        book.dueDate = newDue;
+        book.renewCount = newCount;
+        openRenewIds.delete(id);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Renew failed:', e);
       showToast('Could not save the renewal — check your connection and try again.');
       return;
@@ -3958,15 +4331,34 @@
   async function undoRenew(id, prevDue, prevCount){
     const book = books.find(b => b.id === id);
     if(!book) return;
+    const fields = { 'Due Date': prevDue, 'Renew Count': prevCount };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo renew — ${book.title}` });
+      book.dueDate = prevDue;
+      book.renewCount = prevCount;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Due Date': prevDue, 'Renew Count': prevCount } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.dueDate = prevDue;
       book.renewCount = prevCount;
       await syncCalendarEvent(book);
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo renew — ${book.title}` });
+        book.dueDate = prevDue;
+        book.renewCount = prevCount;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Undo renew failed:', e);
       showToast('Could not undo that — check your connection and try again.');
       return;
@@ -4016,6 +4408,24 @@
     };
     if(borrowDate) fields['Borrow Date'] = borrowDate;
 
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Edit — ${title}` });
+      book.title = title;
+      book.author = author;
+      book.source = source;
+      book.borrowDate = borrowDate;
+      book.dueDate = dueDate;
+      book.renewable = renewable;
+      book.renewCount = renewCount;
+      book.currentPage = currentPage;
+      book.totalPages = totalPages;
+      await logReadingProgress(currentPage - previousPage);
+      openEditIds.delete(id);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
@@ -4032,6 +4442,23 @@
       book.totalPages = totalPages;
       await syncCalendarEvent(book);
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Edit — ${title}` });
+        book.title = title;
+        book.author = author;
+        book.source = source;
+        book.borrowDate = borrowDate;
+        book.dueDate = dueDate;
+        book.renewable = renewable;
+        book.renewCount = renewCount;
+        book.currentPage = currentPage;
+        book.totalPages = totalPages;
+        await logReadingProgress(currentPage - previousPage);
+        openEditIds.delete(id);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Edit failed:', e);
       showToast('Could not save those changes — check your connection and try again.');
       return;
@@ -4094,10 +4521,20 @@
     if(!textarea) return;
     const notes = textarea.value;
     const book = books.find(b => b.id === id);
+    const fields = { 'Notes': notes };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Notes — ${book ? book.title : id}` });
+      if(book) book.notes = notes;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Notes': notes } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       if(book) book.notes = notes;
       const savedEl = document.getElementById('history-saved-' + id);
@@ -4106,6 +4543,13 @@
         setTimeout(() => { if(savedEl) savedEl.textContent = ''; }, 2000);
       }
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Notes — ${book ? book.title : id}` });
+        if(book) book.notes = notes;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Save note failed:', e);
       showToast('Could not save that note — check your connection and try again.');
     }
@@ -4125,13 +4569,30 @@
       }
     }
 
+    const fields = { 'Currently Reading': !wasReading };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Currently reading — ${book.title}` });
+      book.currentlyReading = !wasReading;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
     try{
       await airtableRequest(API_URL, {
         method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields: { 'Currently Reading': !wasReading } }] })
+        body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.currentlyReading = !wasReading;
     }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Currently reading — ${book.title}` });
+        book.currentlyReading = !wasReading;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
       console.error('Update failed:', e);
       showToast('Could not update that — check your connection and try again.');
       return;
@@ -4190,10 +4651,20 @@
     return `<span class="due-badge-wrap">${badge}${sub}</span>`;
   }
 
+  // ---- v36: offline write queue — small badge on any card with a write
+  // still waiting to sync. Tapping it retries the queue immediately.
+  // stopPropagation keeps the tap from also triggering the card's own
+  // onclick (e.g. compact-card expand).
+  function pendingBadgeHtml(book, cls){
+    if(!getPendingBookIds().has(book.id)) return '';
+    return `<span class="${cls || 'pending-badge'}" title="Not yet synced — tap to retry" onclick="event.stopPropagation(); flushQueue();">⟳</span>`;
+  }
+
   // ---- v20: hero fallback suggesting a top wishlist pick ----
   function wishlistHeroHtml(book, tagText){
     return `
       <div class="next-up" onclick="showTab('wishlist'); toggleBorrowBox('${book.id}');" style="cursor:pointer;">
+        ${pendingBadgeHtml(book)}
         <div class="next-up-inner">
           ${coverHtml(book, 'hero')}
           <div class="next-up-text">
@@ -4274,6 +4745,7 @@
       heroPickId = next.id;
       setHeroContent(heroSlot, `
         <div class="next-up">
+          ${pendingBadgeHtml(next)}
           <div class="next-up-inner">
             ${coverHtml(next, 'hero')}
             <div class="next-up-text">
@@ -4509,7 +4981,7 @@
           <div class="wishlist-row-body">
             <div class="wishlist-row-top">
               <div>
-                <p class="wl-title">${priorityBadge}${escapeHtml(b.title)}</p>
+                <p class="wl-title">${priorityBadge}${escapeHtml(b.title)}${pendingBadgeHtml(b, 'wl-pending-badge')}</p>
                 <p class="wl-meta">${escapeHtml(b.author || 'Author unknown')}${b.source ? ' · from ' + escapeHtml(b.source) : ''}</p>
                 ${tagsHtml}
               </div>
@@ -4599,6 +5071,7 @@
     const cls = statusClass(book);
     return `
       <div class="card ${cls} compact" data-flip-key="${book.id}" onclick="toggleCardCompact('${book.id}')" title="Tap to expand">
+        ${pendingBadgeHtml(book)}
         <div class="compact-row">
           <span class="compact-dot ${cls}"></span>
           <div class="compact-main">
@@ -4710,6 +5183,7 @@
 
       return `
         <div class="card ${cls} ${book.currentlyReading ? 'is-reading' : ''}" data-flip-key="${book.id}">
+          ${pendingBadgeHtml(book)}
           <div class="card-body">
             ${coverHtml(book, 'card')}
             <div class="card-text">
@@ -4957,6 +5431,9 @@
       });
     });
   }
+
+  // ---- v36: replay the offline write queue the moment connectivity returns ----
+  window.addEventListener('online', flushQueue);
 </script>
 </body>
 </html>
