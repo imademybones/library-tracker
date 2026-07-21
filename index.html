@@ -331,6 +331,20 @@
     font-size: 24px;
     flex-shrink: 0;
   }
+  /* ---- v38: manual cover upload — the placeholder becomes a tap target ---- */
+  .cover-upload-trigger{
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .cover-upload-trigger:hover,
+  .cover-upload-trigger:active{ background: var(--line); }
+  .cover-upload-input{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+  }
   .empty-hero{
     background: none;
     color: var(--muted);
@@ -2924,21 +2938,98 @@
     }, 200);
   }
 
-  // Returns cover HTML for a book. Kicks off a background lookup the first
-  // time a given title/author is seen; renders a placeholder until it resolves.
-  function coverHtml(book, variant){
-    const key = coverKey(book.title, book.author);
-    const cached = coverCache[key];
+  // Returns cover HTML for a book. Resolution order: a manually-uploaded
+  // Cover attachment on the record wins outright; otherwise falls back to
+  // the existing Open Library lookup, kicking off a background fetch the
+  // first time a given title/author is seen and rendering a placeholder
+  // until it resolves. opts.uploadable makes the placeholder itself a tap
+  // target for manually fixing a missing cover — see coverPlaceholderHtml().
+  function coverHtml(book, variant, opts = {}){
     const imgClass = variant === 'hero' ? 'cover-thumb-hero' : 'cover-thumb';
     const placeholderClass = variant === 'hero' ? 'cover-placeholder-hero' : 'cover-placeholder';
+
+    if(book.cover){
+      return `<img class="${imgClass} loaded" src="${escapeAttr(book.cover)}" alt="" loading="lazy">`;
+    }
+
+    const key = coverKey(book.title, book.author);
+    const cached = coverCache[key];
     if(cached === undefined){
       // Already loading, or not yet started
       if(!(key in coverCache)) fetchCover(book.title, book.author);
-      return `<div class="${placeholderClass}">📕</div>`;
+      return coverPlaceholderHtml(book, placeholderClass, opts.uploadable);
     }
-    if(!cached) return `<div class="${placeholderClass}">📕</div>`;
+    if(!cached) return coverPlaceholderHtml(book, placeholderClass, opts.uploadable);
     const alreadyShown = coverFadedIn.has(key);
     return `<img class="${imgClass}${alreadyShown ? ' loaded' : ''}" src="${cached}" alt="" loading="lazy" data-cover-key="${escapeAttr(key)}" onload="handleCoverLoad(this)">`;
+  }
+
+  // ---- v38: manual cover upload. The 📕 placeholder becomes a tap target
+  // wherever a missing cover is worth fixing by hand (hero + main Stack
+  // cards) — wraps the emoji in a <label> around a hidden file input so
+  // tapping it opens the phone's photo picker/camera directly.
+  function coverPlaceholderHtml(book, placeholderClass, uploadable){
+    if(!uploadable) return `<div class="${placeholderClass}">📕</div>`;
+    return `
+      <label class="${placeholderClass} cover-upload-trigger" title="Tap to add a cover">
+        📕
+        <input type="file" accept="image/*" capture="environment" class="cover-upload-input" onchange="handleCoverUpload(event, '${escapeAttr(book.id)}')">
+      </label>
+    `;
+  }
+
+  // Downscales an image file to thumbnail size before upload (covers only
+  // ever render at cover-thumb size) — keeps phone-camera photos, often
+  // several MB, fast to upload on cellular.
+  function resizeImageForUpload(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read that file'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Could not read that image'));
+        img.onload = () => {
+          const maxWidth = 500;
+          const scale = Math.min(1, maxWidth / img.width);
+          const w = Math.round(img.width * scale) || 1;
+          const h = Math.round(img.height * scale) || 1;
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve({ base64: dataUrl.split(',')[1], contentType: 'image/jpeg' });
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Best-effort, same as Calendar sync / Open Library — a failed cover
+  // upload never touches anything else about the book's data.
+  async function handleCoverUpload(event, bookId){
+    const input = event.target;
+    const file = input.files && input.files[0];
+    input.value = ''; // allow re-selecting the same file later
+    if(!file) return;
+    showToast('Uploading cover…');
+    try{
+      const { base64, contentType } = await resizeImageForUpload(file);
+      const data = await airtableRequest(`${WORKER_URL}/books/${bookId}/cover`, {
+        method: 'POST',
+        body: JSON.stringify({ contentType, file: base64, filename: file.name || 'cover.jpg' })
+      });
+      const attachment = data && data.fields && data.fields['Cover'] && data.fields['Cover'][0];
+      if(!attachment || !attachment.url) throw new Error('Upload response missing attachment URL');
+      const book = books.find(b => b.id === bookId);
+      if(book) book.cover = attachment.url;
+      render();
+      showToast('Cover updated.');
+    }catch(e){
+      console.error('Cover upload failed:', e);
+      showToast('Could not upload that cover — check your connection and try again.');
+    }
   }
   let sortMode = localStorage.getItem('library-tracker-sort') || 'due';
   let searchTerm = '';
@@ -3395,7 +3486,8 @@
       totalPages: f['Total Pages'] || 0,
       priority: f['Priority'] || '',
       tags: f['Tags'] || [],
-      wishlistOrder: f['Wishlist Order'] || 0
+      wishlistOrder: f['Wishlist Order'] || 0,
+      cover: (f['Cover'] && f['Cover'][0] && f['Cover'][0].url) || ''
     };
   }
 
@@ -3619,7 +3711,7 @@
       const pagesText = b.totalPages > 0 ? `${b.currentPage} / ${b.totalPages} pages · ${pct}%` : 'No page count set';
       return `
         <div class="reading-widget-card">
-          ${coverHtml(b, 'compact')}
+          ${coverHtml(b, 'compact', { uploadable: true })}
           <div class="reading-widget-text">
             <div class="reading-widget-label">Currently reading</div>
             <div class="reading-widget-title">${escapeHtml(b.title)}</div>
@@ -5000,7 +5092,7 @@
         <div class="next-up">
           ${pendingBadgeHtml(next)}
           <div class="next-up-inner">
-            ${coverHtml(next, 'hero')}
+            ${coverHtml(next, 'hero', { uploadable: true })}
             <div class="next-up-text">
               <div class="hero-top">
                 <div>
@@ -5438,7 +5530,7 @@
         <div class="card ${cls} ${book.currentlyReading ? 'is-reading' : ''}" data-flip-key="${book.id}">
           ${pendingBadgeHtml(book)}
           <div class="card-body">
-            ${coverHtml(book, 'card')}
+            ${coverHtml(book, 'card', { uploadable: true })}
             <div class="card-text">
             ${readingBadge}
             <p class="card-title">${escapeHtml(book.title)}</p>

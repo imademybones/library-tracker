@@ -17,7 +17,8 @@ Primary table. Fields (name → id): Title `fldErnCFQ9T6h4ei1`, Author
 `fld3k1AQE7AkV5Xmf`, Calendar Event ID `fld9T3tdwTuDjNt9h`, Notes
 `fldzbuQf1kLZFGcDG`, Current Page `fld4D3tuLHA66D8kz`, Total Pages
 `fldlkcJFS0Wpn6X3c`, Priority `fldnkWzZLDigdvQN8`, Tags `fldbuGcMaCBmyyejc`,
-Wishlist Order `fldJzUsQpk7fSmBJc`.
+Wishlist Order `fldJzUsQpk7fSmBJc`, Cover `fldWUCAnKWyA9hYuK` (multipleAttachments,
+added v38 — manual cover upload; empty unless the user uploads one by hand).
 
 ### ReadingLog — `tblFfcYAYc2KoTQyv` (added v27)
 One record per calendar day with any reading activity, used for the
@@ -41,6 +42,13 @@ Routes (path → Airtable table), added v26/v27:
 - bare `WORKER_URL` → `Books` (via `env.TABLE_NAME`)
 - `WORKER_URL/readinglog` → `ReadingLog`
 - `WORKER_URL/settings` → `Settings`
+
+`POST WORKER_URL/books/:recordId/cover` (added v38) — manual cover upload.
+Forwards to Airtable's attachment-upload endpoint, a different host
+(`content.airtable.com`) than the rest of the app's Airtable calls:
+`POST https://content.airtable.com/v0/{baseId}/{recordId}/{fieldId}/uploadAttachment`
+with body `{ contentType, file (base64), filename }`. Field ID
+(`fldWUCAnKWyA9hYuK`, the `Cover` field) is hardcoded in the route.
 
 CORS is restricted to `Access-Control-Allow-Origin: https://imademybones.github.io`.
 
