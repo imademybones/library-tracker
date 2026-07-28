@@ -715,6 +715,33 @@
     margin-bottom: 23px;
   }
 
+  /* ---- v39: Did Not Finish list ---- */
+  .dnf-row{
+    background: none;
+    color: var(--ink);
+    padding: 15px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .dnf-row .hr-title{
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+  .dnf-row .hr-meta{ font-size: 11.5px; color: var(--ink-soft); margin: 0; }
+  .dnf-reason{
+    font-size: 11.5px;
+    font-style: italic;
+    color: var(--ink-soft);
+    margin: 4px 0 0;
+  }
+  .dnf-actions{
+    display: flex;
+    gap: 7px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
   /* To-read wishlist */
   .wishlist-label{
     font-size: 11px;
@@ -882,6 +909,43 @@
     border-radius: 3px;
     border: none;
   }
+
+  /* ---- v39: "Borrow again" inline box on the Did Not Finish list ---- */
+  .dnf-borrow-inline{
+    display: none;
+    gap: 9px;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .dnf-borrow-inline.open{ display: flex; }
+  .dnf-borrow-inline input[type=date]{
+    background: #fff;
+    border: 1.5px solid #dcdcdc;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    padding: 7px 9px;
+    border-radius: 3px;
+  }
+  .dnf-borrow-inline label{
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dnf-borrow-inline button{
+    background: var(--green);
+    color: #fff;
+    font-size: 11px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    border: none;
+  }
+
   .wishlist-empty{
     font-size: 12px;
     color: var(--muted);
@@ -1444,6 +1508,34 @@
   .finish-inline.open{ display: flex; }
   .finish-inline input{ flex: 1; }
   .finish-inline button{
+    background: var(--green);
+    color: #fff;
+    font-size: 11px;
+    padding: 9px 12px;
+    border-radius: 3px;
+    border: none;
+  }
+
+  /* ---- v39: did-not-finish inline box ---- */
+  .dnf-inline{
+    margin-top: 9px;
+    display: none;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .dnf-inline.open{ display: flex; }
+  .dnf-inline input[type=date]{ flex: 1; }
+  .dnf-inline input[type=text]{
+    flex: 2;
+    background: #fff;
+    border: 1.5px solid #dcdcdc;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    padding: 7px 9px;
+    border-radius: 3px;
+  }
+  .dnf-inline button{
     background: var(--green);
     color: #fff;
     font-size: 11px;
@@ -2395,6 +2487,7 @@
   <!-- HISTORY TAB -->
   <div class="tab-panel" id="tab-panel-history">
     <div id="history-wrap"></div>
+    <div id="dnf-wrap"></div>
   </div>
 
   <!-- STATS TAB -->
@@ -3487,7 +3580,10 @@
       priority: f['Priority'] || '',
       tags: f['Tags'] || [],
       wishlistOrder: f['Wishlist Order'] || 0,
-      cover: (f['Cover'] && f['Cover'][0] && f['Cover'][0].url) || ''
+      cover: (f['Cover'] && f['Cover'][0] && f['Cover'][0].url) || '',
+      dnf: !!f['DNF'],
+      dnfDate: f['DNF Date'] || '',
+      dnfReason: f['DNF Reason'] || ''
     };
   }
 
@@ -4211,6 +4307,121 @@
     showToast('Moved back to the wishlist.');
   }
 
+  // ---- v39: "Borrow again" — re-activates a DNF'd book in place (same
+  // record, not a new one), same shape as confirmBorrowed()/undoBorrowed()
+  // for the wishlist. Renew Count and Current Page reset since this is a
+  // fresh attempt; Total Pages is left alone (a fact about the book, not
+  // the loan).
+  function toggleDnfBorrowBox(id){
+    const box = document.getElementById('dnf-borrow-box-' + id);
+    box.classList.toggle('open');
+  }
+
+  async function confirmDnfBorrowAgain(id){
+    const dueInput = document.getElementById('dnf-borrow-due-' + id);
+    const renewableInput = document.getElementById('dnf-borrow-renewable-' + id);
+    const dueDate = dueInput.value;
+    const renewable = renewableInput.checked;
+
+    if(!dueDate){
+      showToast('Enter the due date the library gave you first.');
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const book = books.find(b => b.id === id);
+    const prevDnfDate = book.dnfDate;
+    const prevDnfReason = book.dnfReason;
+    const prevRenewCount = book.renewCount;
+    const prevCurrentPage = book.currentPage;
+    const fields = {
+      'DNF': false, 'DNF Date': null, 'DNF Reason': null,
+      'Due Date': dueDate, 'Borrow Date': today, 'Renewable': renewable,
+      'Renew Count': 0, 'Current Page': 0
+    };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Borrow again — ${book.title}` });
+      book.dnf = false;
+      book.dnfDate = '';
+      book.dnfReason = '';
+      book.dueDate = dueDate;
+      book.borrowDate = today;
+      book.renewable = renewable;
+      book.renewCount = 0;
+      book.currentPage = 0;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.dnf = false;
+      book.dnfDate = '';
+      book.dnfReason = '';
+      book.dueDate = dueDate;
+      book.borrowDate = today;
+      book.renewable = renewable;
+      book.renewCount = 0;
+      book.currentPage = 0;
+      await syncCalendarEvent(book);
+    }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Borrow again — ${book.title}` });
+        book.dnf = false;
+        book.dnfDate = '';
+        book.dnfReason = '';
+        book.dueDate = dueDate;
+        book.borrowDate = today;
+        book.renewable = renewable;
+        book.renewCount = 0;
+        book.currentPage = 0;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
+      console.error('Borrow again failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Marked as borrowed.', 'Undo', () => undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage));
+  }
+
+  async function undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage){
+    const book = books.find(b => b.id === id);
+    if(!book) return;
+    const fields = {
+      'DNF': true, 'DNF Date': prevDnfDate, 'DNF Reason': prevDnfReason || null,
+      'Due Date': null, 'Borrow Date': null,
+      'Renew Count': prevRenewCount, 'Current Page': prevCurrentPage
+    };
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.dnf = true;
+      book.dnfDate = prevDnfDate;
+      book.dnfReason = prevDnfReason || '';
+      book.dueDate = '';
+      book.borrowDate = '';
+      book.renewCount = prevRenewCount;
+      book.currentPage = prevCurrentPage;
+      await removeCalendarEvent(book);
+    }catch(e){
+      console.error('Undo borrow again failed:', e);
+      showToast('Could not undo that — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Moved back to Did Not Finish.');
+  }
+
   // ---- v20: wishlist priority/tags inline edit ----
   function toggleWishlistEdit(id){
     if(openWishlistEditIds.has(id)) openWishlistEditIds.delete(id); else openWishlistEditIds.add(id);
@@ -4566,6 +4777,110 @@
     showToast('Moved back to the stack.');
   }
 
+  // ---- v39: mark a book Did Not Finish — leaves the active stack without
+  // touching Finished/Returned, since a DNF book was never finished.
+  function toggleDnfBox(id){
+    if(openDnfIds.has(id)) openDnfIds.delete(id); else openDnfIds.add(id);
+    openOverflowId = null;
+    render();
+  }
+
+  async function confirmDnf(id){
+    const dateInput = document.getElementById('dnf-date-' + id);
+    const reasonInput = document.getElementById('dnf-reason-' + id);
+    const dnfDate = dateInput.value;
+    if(!dnfDate){
+      showToast('Pick the date you stopped reading this book.');
+      return;
+    }
+    const reason = (reasonInput.value || '').trim();
+    const book = books.find(b => b.id === id);
+    const fields = { 'DNF': true, 'DNF Date': dnfDate, 'DNF Reason': reason || null, 'Currently Reading': false };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark DNF — ${book.title}` });
+      book.dnf = true;
+      book.dnfDate = dnfDate;
+      book.dnfReason = reason || '';
+      book.currentlyReading = false;
+      openDnfIds.delete(id);
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.dnf = true;
+      book.dnfDate = dnfDate;
+      book.dnfReason = reason || '';
+      book.currentlyReading = false;
+      await removeCalendarEvent(book);
+    }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark DNF — ${book.title}` });
+        book.dnf = true;
+        book.dnfDate = dnfDate;
+        book.dnfReason = reason || '';
+        book.currentlyReading = false;
+        openDnfIds.delete(id);
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
+      console.error('Mark DNF failed:', e);
+      showToast('Could not update that — check your connection and try again.');
+      return;
+    }
+    openDnfIds.delete(id);
+    render();
+    showToast('Marked as not finished.', 'Undo', () => undoDnf(id));
+  }
+
+  // ---- v39: undo an accidental DNF — moves the book back into the stack ----
+  async function undoDnf(id){
+    const book = books.find(b => b.id === id);
+    const fields = { 'DNF': false, 'DNF Date': null, 'DNF Reason': null };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo DNF — ${book.title}` });
+      book.dnf = false;
+      book.dnfDate = '';
+      book.dnfReason = '';
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.dnf = false;
+      book.dnfDate = '';
+      book.dnfReason = '';
+    }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Undo DNF — ${book.title}` });
+        book.dnf = false;
+        book.dnfDate = '';
+        book.dnfReason = '';
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
+      console.error('Undo DNF failed:', e);
+      showToast('Could not undo that — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Moved back to the stack.');
+  }
+
   // ---- v21: retroactively fix a finished date after the fact (e.g. for
   // books logged well after actually finishing them) ----
   async function saveFinishedDate(id){
@@ -4614,6 +4929,7 @@
   const openEditIds = new Set();
   const openWishlistEditIds = new Set();
   const openFinishIds = new Set();
+  const openDnfIds = new Set();
 
   function toggleRenewBox(id){
     if(openRenewIds.has(id)) openRenewIds.delete(id); else openRenewIds.add(id);
@@ -4861,6 +5177,12 @@
     render();
   }
 
+  function toggleDnfCollapsed(){
+    const key = 'library-tracker-dnf-collapsed';
+    localStorage.setItem(key, localStorage.getItem(key) === 'true' ? 'false' : 'true');
+    render();
+  }
+
   async function saveNotes(id){
     const textarea = document.getElementById('history-notes-' + id);
     if(!textarea) return;
@@ -5042,7 +5364,7 @@
     // list immediately, before the real delete actually fires ----
     const visible = pendingDeleteIds.size === 0 ? books : books.filter(b => !pendingDeleteIds.has(b.id));
 
-    const activeBooks = visible.filter(b => !b.finished && !b.wishlist);
+    const activeBooks = visible.filter(b => !b.finished && !b.wishlist && !b.dnf);
     const wishlistBooks = visible.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
     const finishedAwaitingReturn = visible.filter(b => b.finished && !b.returned);
     const finishedCount = visible.filter(b => b.finished).length;
@@ -5271,6 +5593,50 @@
       `;
     }
 
+    // Did Not Finish — books abandoned mid-read, kept separately from Reading
+    // History so a DNF never counts as "finished"; each entry can be re-borrowed
+    // (same in-place record update the wishlist uses for "I've borrowed this")
+    // or removed for good via the existing requestRemoveBook() flow.
+    const dnfWrap = document.getElementById('dnf-wrap');
+    const dnfBooks = visible.filter(b => b.dnf)
+      .sort((a,b) => new Date(b.dnfDate) - new Date(a.dnfDate));
+    const dnfSearched = searchTerm
+      ? dnfBooks.filter(b => matchesSearch(b.title, b.author, b.source, b.dnfReason))
+      : dnfBooks;
+    const dnfCollapsed = localStorage.getItem('library-tracker-dnf-collapsed') === 'true';
+    const dnfToday = new Date().toISOString().split('T')[0];
+    if(dnfBooks.length === 0){
+      dnfWrap.innerHTML = '';
+    }else{
+      dnfWrap.innerHTML = `
+        <p class="history-label ${dnfCollapsed ? 'collapsed' : ''}" onclick="toggleDnfCollapsed()">
+          <span class="chevron">▾</span> Did not finish (${dnfBooks.length})
+        </p>
+        <div class="history-list ${dnfCollapsed ? 'collapsed' : ''}">
+          ${dnfSearched.length === 0 ? '<div class="history-empty">No entries match that search.</div>' : dnfSearched.map(b => `
+            <div class="dnf-row">
+              <div class="history-row-top">
+                <div>
+                  <p class="hr-title">${escapeHtml(b.title)}</p>
+                  <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · didn't finish ${fmtDate(b.dnfDate)}</p>
+                  ${b.dnfReason ? `<p class="dnf-reason">${escapeHtml(b.dnfReason)}</p>` : ''}
+                </div>
+              </div>
+              <div class="dnf-actions">
+                <button class="btn-small" onclick="toggleDnfBorrowBox('${b.id}')">📖 Borrow again</button>
+                <button class="btn-remove" onclick="requestRemoveBook('${b.id}')">Remove</button>
+              </div>
+              <div class="dnf-borrow-inline" id="dnf-borrow-box-${b.id}">
+                <input type="date" id="dnf-borrow-due-${b.id}" min="${dnfToday}">
+                <label><input type="checkbox" id="dnf-borrow-renewable-${b.id}" checked> Renewable</label>
+                <button onclick="confirmDnfBorrowAgain('${b.id}')">Confirm — I've got it</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
     // To-read wishlist
     const wishlistEl = document.getElementById('wishlist-list');
     const tagList = ['reserved','available','series','recommendation'];
@@ -5459,6 +5825,12 @@
         <button onclick="confirmFinish('${book.id}')">Confirm finished</button>
       </div>
 
+      <div class="dnf-inline ${openDnfIds.has(book.id) ? 'open' : ''}" id="dnf-box-${book.id}">
+        <input type="date" id="dnf-date-${book.id}" value="${today}" max="${today}">
+        <input type="text" id="dnf-reason-${book.id}" placeholder="Reason (optional)" maxlength="80">
+        <button onclick="confirmDnf('${book.id}')">Confirm — didn't finish</button>
+      </div>
+
       <div class="edit-inline ${openEditIds.has(book.id) ? 'open' : ''}" id="edit-box-${book.id}">
         <div class="edit-row">
           <input type="text" id="edit-title-${book.id}" value="${escapeAttr(book.title)}" placeholder="Title">
@@ -5497,6 +5869,7 @@
             ${atLimit ? 'Renewed ' + maxRenewals + '/' + maxRenewals : (book.renewable ? '↻ Renew' : 'Not renewable')}
           </button>
           <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
+          <button onclick="toggleDnfBox('${book.id}')">🚫 Didn't finish</button>
           ${showCompactToggle ? `<button onclick="toggleCardCompact('${book.id}')">⊟ Compact view</button>` : ''}
           <button class="danger-item" onclick="requestRemoveBook('${book.id}')">
             ✕ Remove (mistake)
@@ -5609,9 +5982,9 @@
     }
 
     const finished = books.filter(b => b.finished);
-    const reading = books.filter(b => !b.finished && !b.wishlist && b.currentlyReading);
+    const reading = books.filter(b => !b.finished && !b.wishlist && !b.dnf && b.currentlyReading);
     const wishlist = books.filter(b => b.wishlist);
-    const activeNotReading = books.filter(b => !b.finished && !b.wishlist);
+    const activeNotReading = books.filter(b => !b.finished && !b.wishlist && !b.dnf);
 
     const totalRenewals = books.reduce((s, b) => s + (b.renewCount || 0), 0);
     const avgRenewals = books.length ? (totalRenewals / books.length).toFixed(1) : '0';
@@ -5659,6 +6032,7 @@
       <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
       <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Finished in ${currentYear}</div></div>
       <div class="stats-card"><div class="big-num" id="stat-streak">0</div><div class="big-label">Month streak</div></div>
+      <div class="stats-card"><div class="big-num" id="stat-dnf">0</div><div class="big-label">Did not finish</div></div>
     `;
     animateStatNum('stat-finished', finished.length);
     animateStatNum('stat-reading', reading.length);
@@ -5668,6 +6042,7 @@
     animateStatNum('stat-avg-days', avgDays !== null ? avgDays : '—');
     animateStatNum('stat-finished-year', finishedThisYear);
     animateStatNum('stat-streak', readingStreak);
+    animateStatNum('stat-dnf', books.filter(b => b.dnf).length);
 
     // Top authors (by number of finished books)
     const authorCounts = {};

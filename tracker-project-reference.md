@@ -18,7 +18,10 @@ Primary table. Fields (name → id): Title `fldErnCFQ9T6h4ei1`, Author
 `fldzbuQf1kLZFGcDG`, Current Page `fld4D3tuLHA66D8kz`, Total Pages
 `fldlkcJFS0Wpn6X3c`, Priority `fldnkWzZLDigdvQN8`, Tags `fldbuGcMaCBmyyejc`,
 Wishlist Order `fldJzUsQpk7fSmBJc`, Cover `fldWUCAnKWyA9hYuK` (multipleAttachments,
-added v38 — manual cover upload; empty unless the user uploads one by hand).
+added v38 — manual cover upload; empty unless the user uploads one by hand),
+DNF `fld3ecS1meaBtocct` (checkbox, added v39), DNF Date `fldRRs9xoRlsjdM2H`
+(date ISO, added v39), DNF Reason `fldK4qyZKEDLYoD6P` (single line text,
+optional, added v39).
 
 ### ReadingLog — `tblFfcYAYc2KoTQyv` (added v27)
 One record per calendar day with any reading activity, used for the
@@ -58,3 +61,18 @@ CORS is restricted to `Access-Control-Allow-Origin: https://imademybones.github.
 deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
+
+Current version: **v39**.
+
+## Changelog
+
+- **v39** — Did Not Finish (DNF). Books abandoned mid-read can be marked DNF
+  from the active card's overflow menu (clears `Currently Reading`, leaves
+  `Finished`/`Returned` untouched, removes the calendar event) and land in a
+  new collapsible "Did not finish" section on the History tab, below Reading
+  History. From there, "Borrow again" reactivates the same record in place
+  (clears the DNF fields, sets fresh `Due Date`/`Borrow Date`/`Renewable`,
+  resets `Renew Count`/`Current Page` to 0, recreates the calendar event) or
+  the entry can be removed for good via the existing remove/undo flow. No
+  Worker changes — rides the existing bare `WORKER_URL` → `Books` route.
+- **v38** — Manual cover upload for Stack hero/cards.
