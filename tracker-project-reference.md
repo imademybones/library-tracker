@@ -21,7 +21,14 @@ Wishlist Order `fldJzUsQpk7fSmBJc`, Cover `fldWUCAnKWyA9hYuK` (multipleAttachmen
 added v38 — manual cover upload; empty unless the user uploads one by hand),
 DNF `fld3ecS1meaBtocct` (checkbox, added v39), DNF Date `fldRRs9xoRlsjdM2H`
 (date ISO, added v39), DNF Reason `fldK4qyZKEDLYoD6P` (single line text,
-optional, added v39).
+optional, added v39), Genre `fldupfSUCDXZJ0ZIu` (singleSelect, added v40 —
+fixed taxonomy of 15 choices: Fiction, Fantasy, Sci-Fi, Mystery/Thriller,
+Horror, Romance, Historical Fiction, Non-Fiction, Biography/Memoir,
+Self-Help, History, Young Adult, Graphic Novel, Poetry, Classics).
+
+There is also an undocumented leftover field, `"Field 20"`
+(`fldkYhTNjaq9d63Zk`, singleLineText, sits between Wishlist Order and
+Cover) — not used anywhere in the app; unclear if it's safe to delete.
 
 ### ReadingLog — `tblFfcYAYc2KoTQyv` (added v27)
 One record per calendar day with any reading activity, used for the
@@ -62,17 +69,31 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v39**.
+Current version: **v40**.
 
 ## Changelog
 
+- **v40** — Genre + moved the DNF list onto the Wishlist tab.
+  - Added a `Genre` singleSelect field (fixed taxonomy, 15 choices — no free
+    text, so it stays useful for filtering rather than fragmenting). A
+    "– genre –" dropdown was added to: the stack add-modal, the wishlist
+    quick-add form, the stack card edit box, and the wishlist row edit box.
+    Genre shows as a chip on expanded stack cards, wishlist rows, and DNF
+    rows, and is included in every existing search filter.
+  - Moved the collapsible "Did not finish" section (`#dnf-wrap`) from the
+    History tab to the Wishlist tab — DNF's "Borrow again" is functionally
+    a wishlist re-activation, so it now lives next to the rest of the
+    to-read list instead of next to Reading History. No change to the DNF
+    logic itself, just where the section renders.
+  - No Worker changes — both rides the existing bare `WORKER_URL` → `Books`
+    route.
 - **v39** — Did Not Finish (DNF). Books abandoned mid-read can be marked DNF
   from the active card's overflow menu (clears `Currently Reading`, leaves
   `Finished`/`Returned` untouched, removes the calendar event) and land in a
-  new collapsible "Did not finish" section on the History tab, below Reading
-  History. From there, "Borrow again" reactivates the same record in place
-  (clears the DNF fields, sets fresh `Due Date`/`Borrow Date`/`Renewable`,
-  resets `Renew Count`/`Current Page` to 0, recreates the calendar event) or
-  the entry can be removed for good via the existing remove/undo flow. No
-  Worker changes — rides the existing bare `WORKER_URL` → `Books` route.
+  new collapsible "Did not finish" section, "Borrow again" reactivates the
+  same record in place (clears the DNF fields, sets fresh `Due
+  Date`/`Borrow Date`/`Renewable`, resets `Renew Count`/`Current Page` to 0,
+  recreates the calendar event) or the entry can be removed for good via
+  the existing remove/undo flow. No Worker changes — rides the existing
+  bare `WORKER_URL` → `Books` route.
 - **v38** — Manual cover upload for Stack hero/cards.

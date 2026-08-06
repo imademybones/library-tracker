@@ -8,7 +8,7 @@
 // Bump CACHE_NAME whenever you deploy a new version so old shells don't
 // linger — the activate handler below clears any previous cache automatically.
 
-const CACHE_NAME = 'library-tracker-shell-v19';
+const CACHE_NAME = 'library-tracker-shell-v20';
 
 const SHELL_ASSETS = [
   './',

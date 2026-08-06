@@ -1038,6 +1038,9 @@
   .wl-tag.tag-reserved{ background: rgba(29,78,95,0.1); color: var(--accent); border-color: rgba(29,78,95,0.25); }
   .wl-tag.tag-series{ background: var(--neutral-fill); color: var(--ink-soft); border-color: #dcdcdc; }
   .wl-tag.tag-recommendation{ background: #fff; color: var(--muted); border-color: #dcdcdc; }
+  /* ---- v40: Genre chip — same shape as tags, its own muted accent so it
+     doesn't compete with the wishlist tag palette above ---- */
+  .wl-tag.tag-genre{ background: rgba(139,111,71,0.1); color: #8b6f47; border-color: rgba(139,111,71,0.25); }
 
   /* v28: wishlist one-tap filter chips */
   .wl-filter-bar{
@@ -1571,7 +1574,8 @@
   }
   .edit-inline input[type=text],
   .edit-inline input[type=date],
-  .edit-inline input[type=number]{
+  .edit-inline input[type=number],
+  .edit-inline select{
     background: #fff;
     border: 1.5px solid #dcdcdc;
     color: var(--ink);
@@ -2477,17 +2481,41 @@
               <label><input type="checkbox" id="w-tag-recommendation" value="Recommendation"> Recommendation</label>
             </div>
           </div>
+          <div>
+            <label class="quick-add-field-label" for="w-genre">Genre</label>
+            <select id="w-genre">
+              <option value="" selected>– genre –</option>
+              <option value="Fiction">Fiction</option>
+              <option value="Fantasy">Fantasy</option>
+              <option value="Sci-Fi">Sci-Fi</option>
+              <option value="Mystery/Thriller">Mystery/Thriller</option>
+              <option value="Horror">Horror</option>
+              <option value="Romance">Romance</option>
+              <option value="Historical Fiction">Historical Fiction</option>
+              <option value="Non-Fiction">Non-Fiction</option>
+              <option value="Biography/Memoir">Biography/Memoir</option>
+              <option value="Self-Help">Self-Help</option>
+              <option value="History">History</option>
+              <option value="Young Adult">Young Adult</option>
+              <option value="Graphic Novel">Graphic Novel</option>
+              <option value="Poetry">Poetry</option>
+              <option value="Classics">Classics</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
     <div class="wl-filter-bar" id="wishlist-filter-bar"></div>
     <div id="wishlist-list"></div>
+    <!-- ---- v40: Did Not Finish sub-list, moved here from History so a
+         DNF'd book's "borrow again" path lives next to the rest of the
+         to-read list ---- -->
+    <div id="dnf-wrap"></div>
   </div>
 
   <!-- HISTORY TAB -->
   <div class="tab-panel" id="tab-panel-history">
     <div id="history-wrap"></div>
-    <div id="dnf-wrap"></div>
   </div>
 
   <!-- STATS TAB -->
@@ -2560,6 +2588,27 @@
       <div>
         <label for="f-totalpages">Total pages (optional)</label>
         <input type="text" id="f-totalpages" placeholder="e.g. 320" inputmode="numeric">
+      </div>
+      <div>
+        <label for="f-genre">Genre (optional)</label>
+        <select id="f-genre">
+          <option value="" selected>– genre –</option>
+          <option value="Fiction">Fiction</option>
+          <option value="Fantasy">Fantasy</option>
+          <option value="Sci-Fi">Sci-Fi</option>
+          <option value="Mystery/Thriller">Mystery/Thriller</option>
+          <option value="Horror">Horror</option>
+          <option value="Romance">Romance</option>
+          <option value="Historical Fiction">Historical Fiction</option>
+          <option value="Non-Fiction">Non-Fiction</option>
+          <option value="Biography/Memoir">Biography/Memoir</option>
+          <option value="Self-Help">Self-Help</option>
+          <option value="History">History</option>
+          <option value="Young Adult">Young Adult</option>
+          <option value="Graphic Novel">Graphic Novel</option>
+          <option value="Poetry">Poetry</option>
+          <option value="Classics">Classics</option>
+        </select>
       </div>
       <div class="full checkbox-row">
         <input type="checkbox" id="f-renewable" checked>
@@ -2897,6 +2946,24 @@
 
   // ---- v22: Source is now a dropdown of regular libraries + "Other" ----
   const LIBRARY_SOURCES = ['Customs House', 'Stanhope Gardens', 'Stanton'];
+
+  // ---- v40: Genre — single-select fixed taxonomy (kept off free text so
+  // it stays useful for filtering/search rather than fragmenting) ----
+  const GENRES = ['Fiction', 'Fantasy', 'Sci-Fi', 'Mystery/Thriller', 'Horror', 'Romance',
+    'Historical Fiction', 'Non-Fiction', 'Biography/Memoir', 'Self-Help', 'History',
+    'Young Adult', 'Graphic Novel', 'Poetry', 'Classics'];
+  function genreSelectHtml(idPrefix, currentValue){
+    return `
+      <select id="${idPrefix}-genre">
+        <option value="" ${!currentValue ? 'selected' : ''}>– genre –</option>
+        ${GENRES.map(g => `<option value="${escapeAttr(g)}" ${currentValue === g ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+      </select>
+    `;
+  }
+  function getGenreValue(idPrefix){
+    const sel = document.getElementById(idPrefix + '-genre');
+    return sel ? sel.value : '';
+  }
 
   // ---- v31: remembers whichever library was used last (across both the
   // Stack and Wishlist add forms) so new entries can default to it. ----
@@ -3583,7 +3650,8 @@
       cover: (f['Cover'] && f['Cover'][0] && f['Cover'][0].url) || '',
       dnf: !!f['DNF'],
       dnfDate: f['DNF Date'] || '',
-      dnfReason: f['DNF Reason'] || ''
+      dnfReason: f['DNF Reason'] || '',
+      genre: f['Genre'] || ''
     };
   }
 
@@ -3944,6 +4012,7 @@
     const renewable = document.getElementById('f-renewable').checked;
     let totalPages = parseInt(document.getElementById('f-totalpages').value, 10);
     if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
+    const genre = getGenreValue('f');
 
     if(!title || !dueDate){
       showToast('At least a title and a due date are needed to add this to the stack.');
@@ -3960,7 +4029,8 @@
       'Finished': false,
       'Returned': false,
       'Current Page': 0,
-      'Total Pages': totalPages
+      'Total Pages': totalPages,
+      'Genre': genre || null
     };
     if(borrowDate) fields['Borrow Date'] = borrowDate;
     if(source) fields['Source'] = source;
@@ -4000,6 +4070,7 @@
     document.getElementById('f-due').value = '';
     document.getElementById('f-renewable').checked = true;
     document.getElementById('f-totalpages').value = '';
+    document.getElementById('f-genre').value = '';
     closeAddModal();
     render();
     showToast('Added to the stack.');
@@ -4025,6 +4096,7 @@
       'Returned': false,
       'Priority': extra.priority || null,
       'Tags': extra.tags || [],
+      'Genre': extra.genre || null,
       'Wishlist Order': maxOrder + 1
     };
 
@@ -4066,6 +4138,7 @@
       .map(id => document.getElementById(id))
       .filter(el => el.checked)
       .map(el => el.value);
+    const genre = getGenreValue('w');
 
     if(!title){
       showToast('At least a title is needed to add this to your to-read list.');
@@ -4073,7 +4146,7 @@
     }
 
     try{
-      await createWishlistRecord(title, author, source, { priority, tags });
+      await createWishlistRecord(title, author, source, { priority, tags, genre });
     }catch(e){
       console.error('Add to wishlist failed:', e);
       showToast('Could not save that — check your connection and try again.');
@@ -4084,6 +4157,7 @@
     document.getElementById('w-author').value = '';
     resetSourceField('w-source');
     document.getElementById('w-priority').value = '';
+    document.getElementById('w-genre').value = '';
     ['w-tag-reserved','w-tag-available','w-tag-series','w-tag-recommendation'].forEach(id => {
       document.getElementById(id).checked = false;
     });
@@ -4435,14 +4509,16 @@
       .map(t => ({ t, el: document.getElementById(`wl-edit-tag-${t}-${id}`) }))
       .filter(x => x.el && x.el.checked)
       .map(x => x.el.value);
+    const genre = getGenreValue('wl-edit-' + id);
 
     const book = books.find(b => b.id === id);
-    const fields = { 'Priority': priority || null, 'Tags': tags };
+    const fields = { 'Priority': priority || null, 'Tags': tags, 'Genre': genre || null };
 
     if(isTempId(id)){
       enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Wishlist edit — ${book.title}` });
       book.priority = priority;
       book.tags = tags;
+      book.genre = genre;
       openWishlistEditIds.delete(id);
       render();
       showToast("Saved — will sync once you're back online.");
@@ -4456,11 +4532,13 @@
       });
       book.priority = priority;
       book.tags = tags;
+      book.genre = genre;
     }catch(e){
       if(e.isNetworkFailure){
         enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Wishlist edit — ${book.title}` });
         book.priority = priority;
         book.tags = tags;
+        book.genre = genre;
         openWishlistEditIds.delete(id);
         render();
         showToast("Saved — will sync once you're back online.");
@@ -5044,6 +5122,7 @@
     let renewCount = parseInt(document.getElementById('edit-renewcount-' + id).value, 10);
     let currentPage = parseInt(document.getElementById('edit-currentpage-' + id).value, 10);
     let totalPages = parseInt(document.getElementById('edit-totalpages-' + id).value, 10);
+    const genre = getGenreValue('edit-' + id);
 
     if(!title || !dueDate){
       showToast('A title and a due date are both needed.');
@@ -5065,7 +5144,8 @@
       'Renewable': renewable,
       'Renew Count': renewCount,
       'Current Page': currentPage,
-      'Total Pages': totalPages
+      'Total Pages': totalPages,
+      'Genre': genre || null
     };
     if(borrowDate) fields['Borrow Date'] = borrowDate;
 
@@ -5080,6 +5160,7 @@
       book.renewCount = renewCount;
       book.currentPage = currentPage;
       book.totalPages = totalPages;
+      book.genre = genre;
       await logReadingProgress(currentPage - previousPage);
       openEditIds.delete(id);
       render();
@@ -5101,6 +5182,7 @@
       book.renewCount = renewCount;
       book.currentPage = currentPage;
       book.totalPages = totalPages;
+      book.genre = genre;
       await syncCalendarEvent(book);
     }catch(e){
       if(e.isNetworkFailure){
@@ -5114,6 +5196,7 @@
         book.renewCount = renewCount;
         book.currentPage = currentPage;
         book.totalPages = totalPages;
+        book.genre = genre;
         await logReadingProgress(currentPage - previousPage);
         openEditIds.delete(id);
         render();
@@ -5593,15 +5676,17 @@
       `;
     }
 
-    // Did Not Finish — books abandoned mid-read, kept separately from Reading
-    // History so a DNF never counts as "finished"; each entry can be re-borrowed
+    // Did Not Finish — books abandoned mid-read, kept out of Reading History
+    // so a DNF never counts as "finished". v40 moved this list onto the
+    // Wishlist tab (#dnf-wrap now lives there) since "borrow again" is
+    // functionally a wishlist re-activation; each entry can be re-borrowed
     // (same in-place record update the wishlist uses for "I've borrowed this")
     // or removed for good via the existing requestRemoveBook() flow.
     const dnfWrap = document.getElementById('dnf-wrap');
     const dnfBooks = visible.filter(b => b.dnf)
       .sort((a,b) => new Date(b.dnfDate) - new Date(a.dnfDate));
     const dnfSearched = searchTerm
-      ? dnfBooks.filter(b => matchesSearch(b.title, b.author, b.source, b.dnfReason))
+      ? dnfBooks.filter(b => matchesSearch(b.title, b.author, b.source, b.dnfReason, b.genre))
       : dnfBooks;
     const dnfCollapsed = localStorage.getItem('library-tracker-dnf-collapsed') === 'true';
     const dnfToday = new Date().toISOString().split('T')[0];
@@ -5619,6 +5704,7 @@
                 <div>
                   <p class="hr-title">${escapeHtml(b.title)}</p>
                   <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · didn't finish ${fmtDate(b.dnfDate)}</p>
+                  ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
                   ${b.dnfReason ? `<p class="dnf-reason">${escapeHtml(b.dnfReason)}</p>` : ''}
                 </div>
               </div>
@@ -5663,7 +5749,7 @@
       ? wishlistBooks.filter(b => (b.tags || []).includes(wishlistFilterTag))
       : wishlistBooks;
     const wishlistSearched = searchTerm
-      ? wishlistFiltered.filter(b => matchesSearch(b.title, b.author, b.source, ...(b.tags || [])))
+      ? wishlistFiltered.filter(b => matchesSearch(b.title, b.author, b.source, b.genre, ...(b.tags || [])))
       : wishlistFiltered;
     if(wishlistBooks.length === 0){
       wishlistEl.innerHTML = '<div class="wishlist-empty">Nothing on your to-read list yet — jot one down above.</div>';
@@ -5677,8 +5763,8 @@
         const priorityBadge = b.priority
           ? `<span class="wl-priority priority-${b.priority.toLowerCase()}" title="${escapeHtml(b.priority)} priority">${priorityStars[b.priority] || ''}</span>`
           : '';
-        const tagsHtml = (b.tags && b.tags.length)
-          ? `<div class="wl-tags">${b.tags.map(t => `<span class="wl-tag tag-${t.toLowerCase()}">${escapeHtml(t)}</span>`).join('')}</div>`
+        const tagsHtml = (b.tags && b.tags.length) || b.genre
+          ? `<div class="wl-tags">${b.genre ? `<span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span>` : ''}${b.tags.map(t => `<span class="wl-tag tag-${t.toLowerCase()}">${escapeHtml(t)}</span>`).join('')}</div>`
           : '';
         return `
         <div class="wishlist-row"
@@ -5724,6 +5810,7 @@
                   </label>
                 `).join('')}
               </div>
+              <label>Genre ${genreSelectHtml('wl-edit-' + b.id, b.genre)}</label>
               <button onclick="confirmWishlistEdit('${b.id}')">Save</button>
             </div>
           </div>
@@ -5736,7 +5823,7 @@
     // shown above in Now Reading or Up Next, so no book appears twice.
     const restOfStack = activeBooks.filter(b => !b.currentlyReading && b.id !== heroPickId);
     const searched = searchTerm
-      ? restOfStack.filter(b => matchesSearch(b.title, b.author, b.source))
+      ? restOfStack.filter(b => matchesSearch(b.title, b.author, b.source, b.genre))
       : restOfStack;
     const sorted = sortBooks(searched);
     const listEl = document.getElementById('book-list');
@@ -5851,6 +5938,9 @@
           <label>Current page <input type="number" min="0" id="edit-currentpage-${book.id}" value="${book.currentPage || 0}"></label>
           <label>Total pages <input type="number" min="0" id="edit-totalpages-${book.id}" value="${book.totalPages || 0}"></label>
         </div>
+        <div class="edit-row">
+          <label style="width:100%;">Genre ${genreSelectHtml('edit-' + book.id, book.genre)}</label>
+        </div>
         <button onclick="confirmEdit('${book.id}')">Save changes</button>
       </div>
     `;
@@ -5910,6 +6000,7 @@
             <p class="card-author">${escapeHtml(book.author || 'Author unknown')}</p>
             ${dueBadgeHtml(book)}
             <p class="meta-line">Borrowed ${fmtDate(book.borrowDate)}${book.source ? ' · from ' + escapeHtml(book.source) : ''}</p>
+            ${book.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(book.genre)}</span></div>` : ''}
             ${progressBarHtml(book, 'card')}
             ${book.currentlyReading ? `
               <button class="tile-update-btn" onclick="toggleProgressBox('${book.id}')">Update progress</button>
