@@ -69,10 +69,24 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v40**.
+Current version: **v41**.
 
 ## Changelog
 
+- **v41** — Genre in Stats + editable on finished books.
+  - Reading History rows (finished books) now show a genre chip and an
+    inline "Genre" select + Save button, patterned on the existing
+    Finished-date editor (`saveHistoryGenre()`, same
+    isTempId/network-failure/offline-queue handling as
+    `saveFinishedDate()`). Before this, genre was only editable on active
+    stack/wishlist cards — fixing it on a book you'd already finished
+    meant "move back to stack, edit, re-finish."
+  - Stats tab gained a "Top genres" ranked list (finished books only,
+    same style/ranking as Top authors), between Top authors and Most
+    borrowed from.
+  - Genre added to the Reading History search filter.
+  - No Worker changes — rides the existing bare `WORKER_URL` → `Books`
+    route.
 - **v40** — Genre + moved the DNF list onto the Wishlist tab.
   - Added a `Genre` singleSelect field (fixed taxonomy, 15 choices — no free
     text, so it stays useful for filtering rather than fragmenting). A

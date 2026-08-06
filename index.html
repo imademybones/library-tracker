@@ -676,7 +676,8 @@
     color: var(--ink-soft);
     margin: 0;
   }
-  .hr-date-edit input[type=date]{
+  .hr-date-edit input[type=date],
+  .hr-date-edit select{
     background: #fff;
     border: 1.5px solid #dcdcdc;
     color: var(--ink);
@@ -5001,6 +5002,45 @@
     showToast('Finished date updated.');
   }
 
+  // ---- v41: edit genre directly on a finished book — before this, genre
+  // was only editable on active stack/wishlist cards, so fixing it after
+  // the fact meant "move back to stack, edit, re-finish". Same
+  // isTempId/network-failure pattern as saveFinishedDate above.
+  async function saveHistoryGenre(id){
+    const genre = getGenreValue('history-' + id);
+    const book = books.find(b => b.id === id);
+    const fields = { 'Genre': genre || null };
+
+    if(isTempId(id)){
+      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Genre — ${book.title}` });
+      book.genre = genre;
+      render();
+      showToast("Saved — will sync once you're back online.");
+      return;
+    }
+
+    try{
+      await airtableRequest(API_URL, {
+        method: 'PATCH',
+        body: JSON.stringify({ records: [{ id, fields }] })
+      });
+      book.genre = genre;
+    }catch(e){
+      if(e.isNetworkFailure){
+        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Genre — ${book.title}` });
+        book.genre = genre;
+        render();
+        showToast("Saved — will sync once you're back online.");
+        return;
+      }
+      console.error('Save genre failed:', e);
+      showToast('Could not save that genre — check your connection and try again.');
+      return;
+    }
+    render();
+    showToast('Genre updated.');
+  }
+
   // Tracked in JS (not just a DOM class) because overflow-menu clicks
   // trigger a render(), which rebuilds card HTML from scratch each time.
   const openRenewIds = new Set();
@@ -5599,7 +5639,7 @@
     const finishedBooks = visible.filter(b => b.finished)
       .sort((a,b) => new Date(b.finishedDate) - new Date(a.finishedDate));
     const finishedBooksSearched = searchTerm
-      ? finishedBooks.filter(b => matchesSearch(b.title, b.author, b.source, b.notes))
+      ? finishedBooks.filter(b => matchesSearch(b.title, b.author, b.source, b.notes, b.genre))
       : finishedBooks;
     const historyCollapsed = localStorage.getItem('library-tracker-history-collapsed') === 'true';
     const historyTodayStr = new Date().toISOString().split('T')[0];
@@ -5633,6 +5673,7 @@
               <div>
                 <p class="hr-title">${escapeHtml(b.title)}</p>
                 <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · finished ${fmtDate(b.finishedDate)}</p>
+                ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
               </div>
               <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
             </div>
@@ -5643,6 +5684,11 @@
               <label for="history-date-${b.id}">Finished date</label>
               <input type="date" id="history-date-${b.id}" value="${b.finishedDate}" max="${historyTodayStr}">
               <button onclick="saveFinishedDate('${b.id}')">Save date</button>
+            </div>
+            <div class="hr-date-edit">
+              <label for="history-${b.id}-genre">Genre</label>
+              ${genreSelectHtml('history-' + b.id, b.genre)}
+              <button onclick="saveHistoryGenre('${b.id}')">Save genre</button>
             </div>
             <button class="hr-unfinish" onclick="unfinishBook('${b.id}')">↩ Not finished after all — move back to stack</button>
           </div>
@@ -6192,6 +6238,25 @@
         `).join('')}
       </div>` : '<p class="stats-empty">No source recorded on any borrowed book yet.</p>';
 
+    // ---- v41: top genres — finished books only, same ranking as Top
+    // authors (what you've actually read, not what's queued up) ----
+    const genreCounts = {};
+    finished.forEach(b => {
+      const g = (b.genre || '').trim();
+      if(g) genreCounts[g] = (genreCounts[g] || 0) + 1;
+    });
+    const topGenres = Object.entries(genreCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+    const topGenresHtml = topGenres.length ? `
+      <div class="top-list">
+        ${topGenres.map(([name, count], i) => `
+          <div class="top-item">
+            <span class="rank">${i+1}</span>
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="score">${count} finished</span>
+          </div>
+        `).join('')}
+      </div>` : '<p class="stats-empty">No genre recorded on any finished book yet.</p>';
+
     // ---- v32: cover mosaic — most recently finished books that already
     // have a resolved cover image. Also kicks off lookups for any that
     // don't yet, so the grid fills in as they resolve (via the normal
@@ -6210,6 +6275,8 @@
       ${mosaicHtml}
       <div class="stats-section-title">Top authors</div>
       ${topAuthorsHtml}
+      <div class="stats-section-title">Top genres</div>
+      ${topGenresHtml}
       <div class="stats-section-title">Most borrowed from</div>
       ${topSourcesHtml}
       <div class="stats-section-title">Finished by year</div>
