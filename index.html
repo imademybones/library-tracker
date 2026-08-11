@@ -2416,6 +2416,7 @@
         <button class="sort-btn active" id="sort-due" onclick="setSortMode('due')">Due date</button>
         <button class="sort-btn" id="sort-title" onclick="setSortMode('title')">Title</button>
         <button class="sort-btn" id="sort-author" onclick="setSortMode('author')">Author</button>
+        <button class="sort-btn" id="sort-renewal" onclick="setSortMode('renewal')">Can't renew first</button>
       </div>
       <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()">Compact view</button>
       <button class="btn-export" onclick="exportBackup()" title="Download a backup JSON file">↓ Export</button>
@@ -4004,6 +4005,13 @@
     return 'status-ok';
   }
 
+  // ---- v42: shared "no renewals left" check — not renewable at all, or
+  // already at the renewal cap. Used to surface these books above ones
+  // that are due sooner but can still be pushed back.
+  function cannotRenew(book){
+    return !book.renewable || book.renewCount >= maxRenewals;
+  }
+
   async function addBook(){
     const title = document.getElementById('f-title').value.trim();
     const author = document.getElementById('f-author').value.trim();
@@ -5396,6 +5404,12 @@
       copy.sort((a,b) => a.title.localeCompare(b.title));
     }else if(sortMode === 'author'){
       copy.sort((a,b) => (a.author||'').localeCompare(b.author||''));
+    }else if(sortMode === 'renewal'){
+      copy.sort((a,b) => {
+        const aBlocked = cannotRenew(a), bBlocked = cannotRenew(b);
+        if(aBlocked !== bBlocked) return aBlocked ? -1 : 1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      });
     }else{
       copy.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
     }
@@ -5471,7 +5485,7 @@
   function render(){
     if(!dataLoaded) return;
     // Sync sort toolbar buttons
-    ['due','title','author'].forEach(m => {
+    ['due','title','author','renewal'].forEach(m => {
       document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
     });
     const compactBtn = document.getElementById('compact-toggle-btn');
@@ -5479,7 +5493,8 @@
     document.getElementById('stack-label').textContent =
       sortMode === 'due' ? 'Rest of the stack — soonest due first' :
       sortMode === 'title' ? 'Rest of the stack — A–Z by title' :
-      'Rest of the stack — A–Z by author';
+      sortMode === 'author' ? 'Rest of the stack — A–Z by author' :
+      "Rest of the stack — can't renew first";
     const renewalsInput = document.getElementById('max-renewals-input');
     if(renewalsInput && document.activeElement !== renewalsInput) renewalsInput.value = maxRenewals;
 
