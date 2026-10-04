@@ -3130,12 +3130,15 @@
   // wherever a missing cover is worth fixing by hand (hero + main Stack
   // cards) — wraps the emoji in a <label> around a hidden file input so
   // tapping it opens the phone's photo picker/camera directly.
+  // ---- v43: dropped capture="environment" — it forced mobile browsers
+  // straight into the camera app; without it the OS offers the normal
+  // file/photo-library picker so an existing image can be chosen.
   function coverPlaceholderHtml(book, placeholderClass, uploadable){
     if(!uploadable) return `<div class="${placeholderClass}">📕</div>`;
     return `
       <label class="${placeholderClass} cover-upload-trigger" title="Tap to add a cover">
         📕
-        <input type="file" accept="image/*" capture="environment" class="cover-upload-input" onchange="handleCoverUpload(event, '${escapeAttr(book.id)}')">
+        <input type="file" accept="image/*" class="cover-upload-input" onchange="handleCoverUpload(event, '${escapeAttr(book.id)}')">
       </label>
     `;
   }
