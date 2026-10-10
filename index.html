@@ -2376,7 +2376,7 @@
       <span class="calendar-note" id="calendar-note">Due dates will sync automatically once connected.</span>
     </div>
     <div class="settings-row">
-      <label for="max-renewals-input">Max renewals per book</label>
+      <label for="max-renewals-input" title="Customs House and Stanton allow 2, Stanhope Gardens allows 3">Max renewals (other libraries)</label>
       <input type="number" id="max-renewals-input" min="0" max="20" value="3" onchange="setMaxRenewals(this.value)">
     </div>
   </header>
@@ -2413,7 +2413,8 @@
     <div class="stack-toolbar">
       <p class="stack-label flow-section-label" id="stack-label">Rest of the stack</p>
       <div class="sort-group">
-        <button class="sort-btn active" id="sort-due" onclick="setSortMode('due')">Due date</button>
+        <button class="sort-btn active" id="sort-next" onclick="setSortMode('next')">Read next</button>
+        <button class="sort-btn" id="sort-due" onclick="setSortMode('due')">Due date</button>
         <button class="sort-btn" id="sort-title" onclick="setSortMode('title')">Title</button>
         <button class="sort-btn" id="sort-author" onclick="setSortMode('author')">Author</button>
         <button class="sort-btn" id="sort-renewal" onclick="setSortMode('renewal')">Can't renew first</button>
@@ -3196,7 +3197,9 @@
       showToast('Could not upload that cover — check your connection and try again.');
     }
   }
-  let sortMode = localStorage.getItem('library-tracker-sort') || 'due';
+  // v44: new key so everyone lands on the new "Read next" default once,
+  // rather than staying on whatever the old saved sort was.
+  let sortMode = localStorage.getItem('library-tracker-sort-v44') || 'next';
   let searchTerm = '';
   let dataLoaded = false;
 
@@ -4012,7 +4015,29 @@
   // already at the renewal cap. Used to surface these books above ones
   // that are due sooner but can still be pushed back.
   function cannotRenew(book){
-    return !book.renewable || book.renewCount >= maxRenewals;
+    return renewalsLeft(book) === 0;
+  }
+
+  // ---- v44: renewal caps differ per library — Customs House and Stanton
+  // allow 2 renewals, Stanhope Gardens allows 3. Any other / blank source
+  // falls back to the "Max renewals" setting in the header.
+  const LIBRARY_MAX_RENEWALS = { 'Customs House': 2, 'Stanhope Gardens': 3, 'Stanton': 2 };
+  function maxRenewalsFor(bookOrSource){
+    const source = typeof bookOrSource === 'string' ? bookOrSource : (bookOrSource.source || '');
+    return LIBRARY_MAX_RENEWALS[source.trim()] ?? maxRenewals;
+  }
+  function renewalsLeft(book){
+    if(!book.renewable) return 0;
+    return Math.max(0, maxRenewalsFor(book) - book.renewCount);
+  }
+
+  // ---- v44: "Read next" order — fewest renewals left first (those are the
+  // books that have to go back soonest for good), then soonest due date as
+  // the tiebreak. Drives the default Rest-of-stack sort and the Up Next hero.
+  function compareReadNext(a, b){
+    const left = renewalsLeft(a) - renewalsLeft(b);
+    if(left !== 0) return left;
+    return new Date(a.dueDate) - new Date(b.dueDate);
   }
 
   async function addBook(){
@@ -5180,7 +5205,8 @@
       return;
     }
     if(isNaN(renewCount) || renewCount < 0) renewCount = 0;
-    if(renewCount > maxRenewals) renewCount = maxRenewals;
+    const renewCap = maxRenewalsFor(source);
+    if(renewCount > renewCap) renewCount = renewCap;
     if(isNaN(currentPage) || currentPage < 0) currentPage = 0;
     if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
     if(totalPages > 0 && currentPage > totalPages) currentPage = totalPages;
@@ -5266,7 +5292,7 @@
 
   function setSortMode(mode){
     sortMode = mode;
-    localStorage.setItem('library-tracker-sort', mode);
+    localStorage.setItem('library-tracker-sort-v44', mode);
     render();
   }
 
@@ -5413,8 +5439,10 @@
         if(aBlocked !== bBlocked) return aBlocked ? -1 : 1;
         return new Date(a.dueDate) - new Date(b.dueDate);
       });
-    }else{
+    }else if(sortMode === 'due'){
       copy.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
+    }else{
+      copy.sort(compareReadNext);
     }
     return copy;
   }
@@ -5488,12 +5516,13 @@
   function render(){
     if(!dataLoaded) return;
     // Sync sort toolbar buttons
-    ['due','title','author','renewal'].forEach(m => {
+    ['next','due','title','author','renewal'].forEach(m => {
       document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
     });
     const compactBtn = document.getElementById('compact-toggle-btn');
     if(compactBtn) compactBtn.classList.toggle('active', compactMode);
     document.getElementById('stack-label').textContent =
+      sortMode === 'next' ? 'Rest of the stack — read next (fewest renewals left first)' :
       sortMode === 'due' ? 'Rest of the stack — soonest due first' :
       sortMode === 'title' ? 'Rest of the stack — A–Z by title' :
       sortMode === 'author' ? 'Rest of the stack — A–Z by author' :
@@ -5525,13 +5554,13 @@
 
     if(activeTab === 'stats') renderStats();
 
-    const byDue = [...activeBooks].sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
     const heroSlot = document.getElementById('hero-slot');
     const readingBooks = activeBooks.filter(b => b.currentlyReading);
     renderReadingWidget(readingBooks);
 
-    // Hero: soonest due date among active books not currently being read
-    const upcoming = byDue.filter(b => !b.currentlyReading);
+    // Hero: v44 — top "Read next" pick (fewest renewals left, then soonest
+    // due) among active books not currently being read
+    const upcoming = activeBooks.filter(b => !b.currentlyReading).sort(compareReadNext);
     let heroPickId = null; // v25: excluded from "Rest of Stack" below so it isn't shown twice
 
     if(activeBooks.length === 0){
@@ -5962,7 +5991,8 @@
   function renderCardActionBlock(book, opts = {}){
     const showCompactToggle = opts.showCompactToggle !== false;
     const today = new Date().toISOString().split('T')[0];
-    const atLimit = book.renewCount >= maxRenewals;
+    const bookMax = maxRenewalsFor(book);
+    const atLimit = book.renewCount >= bookMax;
     const canRenew = book.renewable && !atLimit;
 
     const inlineBoxesHtml = `
@@ -5996,7 +6026,7 @@
         </div>
         <div class="edit-check-row">
           <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
-          <label>Renewals used <input type="number" min="0" max="${maxRenewals}" id="edit-renewcount-${book.id}" value="${book.renewCount}"></label>
+          <label>Renewals used <input type="number" min="0" max="${maxRenewalsFor(book)}" id="edit-renewcount-${book.id}" value="${book.renewCount}"></label>
         </div>
         <div class="edit-check-row">
           <label>Current page <input type="number" min="0" id="edit-currentpage-${book.id}" value="${book.currentPage || 0}"></label>
@@ -6020,7 +6050,7 @@
         </div>
         <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
           <button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
-            ${atLimit ? 'Renewed ' + maxRenewals + '/' + maxRenewals : (book.renewable ? '↻ Renew' : 'Not renewable')}
+            ${atLimit ? 'Renewed ' + bookMax + '/' + bookMax : (book.renewable ? '↻ Renew' : 'Not renewable')}
           </button>
           <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
           <button onclick="toggleDnfBox('${book.id}')">🚫 Didn't finish</button>
@@ -6039,7 +6069,8 @@
   function renderExpandedCard(book){
       const d = daysUntil(book.dueDate);
       const cls = statusClass(book);
-      const atLimit = book.renewCount >= maxRenewals;
+      const bookMax = maxRenewalsFor(book);
+      const atLimit = book.renewCount >= bookMax;
 
       let stampHtml = '';
       if(!book.renewable){
@@ -6076,7 +6107,7 @@
               </div>
             ` : ''}
             ${stampHtml}
-            <div class="dots">${renderDots(book.renewCount, maxRenewals)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
+            <div class="dots">${renderDots(book.renewCount, bookMax)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
             ${inlineBoxesHtml}
             </div>
           </div>
