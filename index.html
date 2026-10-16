@@ -2963,6 +2963,8 @@
       </select>
     `;
   }
+  // v45: graphic novels are counted separately from books on the stats tab.
+  function isGraphicNovel(b){ return (b.genre || '').trim() === 'Graphic Novel'; }
   function getGenreValue(idPrefix){
     const sel = document.getElementById(idPrefix + '-genre');
     return sel ? sel.value : '';
@@ -6167,7 +6169,13 @@
       return;
     }
 
-    const finished = books.filter(b => b.finished);
+    // ---- v45: graphic novels are tracked separately — they don't count
+    // toward the "Finished" / "Finished in <year>" / by-year book totals,
+    // and get their own counts instead. Streak, avg days, authors, genres
+    // and the cover mosaic still draw on everything finished. ----
+    const finishedAll = books.filter(b => b.finished);
+    const finished = finishedAll.filter(b => !isGraphicNovel(b));
+    const finishedGraphic = finishedAll.filter(isGraphicNovel);
     const reading = books.filter(b => !b.finished && !b.wishlist && !b.dnf && b.currentlyReading);
     const wishlist = books.filter(b => b.wishlist);
     const activeNotReading = books.filter(b => !b.finished && !b.wishlist && !b.dnf);
@@ -6176,7 +6184,7 @@
     const avgRenewals = books.length ? (totalRenewals / books.length).toFixed(1) : '0';
 
     // Average days from borrow to finish, for finished books with both dates.
-    const durations = finished
+    const durations = finishedAll
       .filter(b => b.borrowDate && b.finishedDate)
       .map(b => Math.round((new Date(b.finishedDate) - new Date(b.borrowDate)) / (1000*60*60*24)))
       .filter(d => d >= 0);
@@ -6184,13 +6192,15 @@
 
     // Books finished so far this calendar year.
     const currentYear = new Date().getFullYear();
-    const finishedThisYear = finished.filter(b => b.finishedDate && new Date(b.finishedDate).getFullYear() === currentYear).length;
+    const inCurrentYear = b => b.finishedDate && new Date(b.finishedDate).getFullYear() === currentYear;
+    const finishedThisYear = finished.filter(inCurrentYear).length;
+    const graphicThisYear = finishedGraphic.filter(inCurrentYear).length;
 
     // Reading streak: consecutive calendar months, counting back from the
     // current month, with at least one book finished in each. Breaks as
     // soon as a month with zero finishes is hit.
     const finishedMonthSet = new Set(
-      finished.filter(b => b.finishedDate).map(b => {
+      finishedAll.filter(b => b.finishedDate).map(b => {
         const d = new Date(b.finishedDate);
         return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       })
@@ -6217,6 +6227,8 @@
       <div class="stats-card"><div class="big-num" id="stat-avg-renewals">0</div><div class="big-label">Avg renewals/book</div></div>
       <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
       <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Finished in ${currentYear}</div></div>
+      <div class="stats-card"><div class="big-num" id="stat-graphic-year">0</div><div class="big-label">Graphic novels in ${currentYear}</div></div>
+      <div class="stats-card"><div class="big-num" id="stat-graphic">0</div><div class="big-label">Graphic novels read</div></div>
       <div class="stats-card"><div class="big-num" id="stat-streak">0</div><div class="big-label">Month streak</div></div>
       <div class="stats-card"><div class="big-num" id="stat-dnf">0</div><div class="big-label">Did not finish</div></div>
     `;
@@ -6227,12 +6239,14 @@
     animateStatNum('stat-avg-renewals', avgRenewals);
     animateStatNum('stat-avg-days', avgDays !== null ? avgDays : '—');
     animateStatNum('stat-finished-year', finishedThisYear);
+    animateStatNum('stat-graphic-year', graphicThisYear);
+    animateStatNum('stat-graphic', finishedGraphic.length);
     animateStatNum('stat-streak', readingStreak);
     animateStatNum('stat-dnf', books.filter(b => b.dnf).length);
 
     // Top authors (by number of finished books)
     const authorCounts = {};
-    finished.forEach(b => {
+    finishedAll.forEach(b => {
       const a = (b.author || '').trim();
       if(a) authorCounts[a] = (authorCounts[a] || 0) + 1;
     });
@@ -6248,25 +6262,29 @@
         `).join('')}
       </div>` : '<p class="stats-empty">No finished books with an author yet.</p>';
 
-    // Books finished per year
-    const yearCounts = {};
-    finished.forEach(b => {
-      if(!b.finishedDate) return;
-      const y = new Date(b.finishedDate).getFullYear();
-      if(!isNaN(y)) yearCounts[y] = (yearCounts[y] || 0) + 1;
-    });
-    const years = Object.keys(yearCounts).sort();
-    const maxYearCount = Math.max(1, ...Object.values(yearCounts));
-    const yearHtml = years.length ? `
-      <div class="year-bars">
-        ${years.map(y => `
-          <div class="year-bar-row">
-            <span class="year-bar-label">${y}</span>
-            <div class="year-bar-track"><div class="year-bar-fill" style="width:${Math.round((yearCounts[y]/maxYearCount)*100)}%"></div></div>
-            <span class="year-bar-count">${yearCounts[y]}</span>
-          </div>
-        `).join('')}
-      </div>` : '<p class="stats-empty">No finished dates recorded yet.</p>';
+    // Books finished per year (graphic novels get their own chart below)
+    function yearBarsHtml(list, emptyText){
+      const yearCounts = {};
+      list.forEach(b => {
+        if(!b.finishedDate) return;
+        const y = new Date(b.finishedDate).getFullYear();
+        if(!isNaN(y)) yearCounts[y] = (yearCounts[y] || 0) + 1;
+      });
+      const years = Object.keys(yearCounts).sort();
+      const maxYearCount = Math.max(1, ...Object.values(yearCounts));
+      return years.length ? `
+        <div class="year-bars">
+          ${years.map(y => `
+            <div class="year-bar-row">
+              <span class="year-bar-label">${y}</span>
+              <div class="year-bar-track"><div class="year-bar-fill" style="width:${Math.round((yearCounts[y]/maxYearCount)*100)}%"></div></div>
+              <span class="year-bar-count">${yearCounts[y]}</span>
+            </div>
+          `).join('')}
+        </div>` : `<p class="stats-empty">${emptyText}</p>`;
+    }
+    const yearHtml = yearBarsHtml(finished, 'No finished dates recorded yet.');
+    const graphicYearHtml = finishedGraphic.length ? yearBarsHtml(finishedGraphic, 'No finished dates recorded on any graphic novel yet.') : '';
 
     // Most borrowed library / source — across every book that's actually
     // been borrowed (i.e. not still sitting on the wishlist).
@@ -6290,7 +6308,7 @@
     // ---- v41: top genres — finished books only, same ranking as Top
     // authors (what you've actually read, not what's queued up) ----
     const genreCounts = {};
-    finished.forEach(b => {
+    finishedAll.forEach(b => {
       const g = (b.genre || '').trim();
       if(g) genreCounts[g] = (genreCounts[g] || 0) + 1;
     });
@@ -6310,10 +6328,10 @@
     // have a resolved cover image. Also kicks off lookups for any that
     // don't yet, so the grid fills in as they resolve (via the normal
     // coverHtml()/fetchCover()/render() cycle already used elsewhere).
-    const finishedForMosaic = [...finished].sort((a, b) => new Date(b.finishedDate || 0) - new Date(a.finishedDate || 0));
+    const finishedForMosaic = [...finishedAll].sort((a, b) => new Date(b.finishedDate || 0) - new Date(a.finishedDate || 0));
     finishedForMosaic.forEach(b => coverHtml(b, 'compact'));
     const mosaicBooks = finishedForMosaic.filter(b => coverCache[coverKey(b.title, b.author)]).slice(0, 30);
-    const mosaicHtml = finished.length === 0
+    const mosaicHtml = finishedAll.length === 0
       ? '<p class="cover-mosaic-empty">Finish a book to start building your cover mosaic.</p>'
       : (mosaicBooks.length
           ? `<div class="cover-mosaic">${mosaicBooks.map(b => coverHtml(b, 'compact')).join('')}</div>`
@@ -6330,6 +6348,8 @@
       ${topSourcesHtml}
       <div class="stats-section-title">Finished by year</div>
       ${yearHtml}
+      ${graphicYearHtml ? `<div class="stats-section-title">Graphic novels by year</div>
+      ${graphicYearHtml}` : ''}
     `;
   }
 
