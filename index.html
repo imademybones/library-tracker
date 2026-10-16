@@ -2280,6 +2280,8 @@
     padding: 12px;
     text-align: center;
   }
+  /* v46: the optional third "Graphic novels" tile spans the full row */
+  .wrapup-stat:nth-child(3){ grid-column: 1 / -1; }
   .wrapup-stat-num{ font-family: 'Fraunces', serif; font-weight: 900; font-size: 26px; color: var(--accent); }
   .wrapup-stat-label{ font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
   .wrapup-line{ font-size: 13px; margin: 6px 0; color: var(--ink-soft); }
@@ -2847,8 +2849,11 @@
   // ---- v32: reading milestones — celebrated once per threshold, the
   // moment the finished-book count first reaches it. ----
   const MILESTONES = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000];
-  function checkMilestone(){
-    const count = books.filter(b => b.finished).length;
+  // v46: graphic novels don't count toward book milestones, and finishing
+  // one never re-fires a milestone the book count is already sitting on.
+  function checkMilestone(justFinished){
+    if(justFinished && isGraphicNovel(justFinished)) return false;
+    const count = books.filter(b => b.finished && !isGraphicNovel(b)).length;
     if(MILESTONES.includes(count)){
       showMilestoneCelebration(count);
       return true;
@@ -2882,16 +2887,22 @@
     const wrapupYear = now.getFullYear() - 1;
     const key = 'library-tracker-wrapup-shown-' + wrapupYear;
     if(localStorage.getItem(key)) return;
-    const finishedInYear = books.filter(b => b.finished && b.finishedDate && new Date(b.finishedDate).getFullYear() === wrapupYear);
-    if(finishedInYear.length === 0) return;
+    const finishedAllInYear = books.filter(b => b.finished && b.finishedDate && new Date(b.finishedDate).getFullYear() === wrapupYear);
+    if(finishedAllInYear.length === 0) return;
     localStorage.setItem(key, '1');
-    showAnnualWrapup(wrapupYear, finishedInYear);
+    showAnnualWrapup(wrapupYear, finishedAllInYear);
   }
 
-  function showAnnualWrapup(year, finishedInYear){
+  // v46: graphic novels get their own count in the wrap-up; every
+  // book-level line (count, pages, author, longest, fastest, busiest month)
+  // covers prose books only. The cover mosaic still shows everything.
+  function showAnnualWrapup(year, finishedAllInYear){
     const box = document.getElementById('wrapup-box');
     const overlay = document.getElementById('wrapup-overlay');
     if(!box || !overlay) return;
+
+    const finishedInYear = finishedAllInYear.filter(b => !isGraphicNovel(b));
+    const graphicInYear = finishedAllInYear.length - finishedInYear.length;
 
     const totalPages = finishedInYear.reduce((s, b) => s + (b.totalPages || 0), 0);
 
@@ -2919,7 +2930,7 @@
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const busiestMonth = Object.entries(monthCounts).sort((a, b) => b[1] - a[1])[0];
 
-    const mosaicBooks = finishedInYear.filter(b => coverCache[coverKey(b.title, b.author)]).slice(0, 24);
+    const mosaicBooks = finishedAllInYear.filter(b => coverCache[coverKey(b.title, b.author)]).slice(0, 24);
     const mosaicHtml = mosaicBooks.length
       ? `<div class="wrapup-mosaic">${mosaicBooks.map(b => coverHtml(b, 'compact')).join('')}</div>`
       : '';
@@ -2930,6 +2941,7 @@
       <div class="wrapup-stats-grid">
         <div class="wrapup-stat"><div class="wrapup-stat-num">${finishedInYear.length}</div><div class="wrapup-stat-label">Books finished</div></div>
         <div class="wrapup-stat"><div class="wrapup-stat-num">${totalPages || '—'}</div><div class="wrapup-stat-label">Pages read</div></div>
+        ${graphicInYear ? `<div class="wrapup-stat"><div class="wrapup-stat-num">${graphicInYear}</div><div class="wrapup-stat-label">Graphic novels</div></div>` : ''}
       </div>
       ${topAuthorEntry ? `<p class="wrapup-line">Most-read author: <strong>${escapeHtml(topAuthorEntry[0])}</strong> (${topAuthorEntry[1]} book${topAuthorEntry[1] === 1 ? '' : 's'}).</p>` : ''}
       ${longest ? `<p class="wrapup-line">Longest read: <strong>${escapeHtml(longest.title)}</strong> — ${longest.totalPages} pages.</p>` : ''}
@@ -4744,7 +4756,7 @@
       openFinishIds.delete(id);
       render();
       showToast("Saved — will sync once you're back online.");
-      if(!checkMilestone()) triggerConfetti();
+      if(!checkMilestone(book)) triggerConfetti();
       return;
     }
 
@@ -4768,7 +4780,7 @@
         openFinishIds.delete(id);
         render();
         showToast("Saved — will sync once you're back online.");
-        if(!checkMilestone()) triggerConfetti();
+        if(!checkMilestone(book)) triggerConfetti();
         return;
       }
       console.error('Mark finished failed:', e);
@@ -4778,7 +4790,7 @@
     openFinishIds.delete(id);
     render();
     showToast('Marked finished.', 'Undo', () => unfinishBook(id));
-    if(!checkMilestone()) triggerConfetti();
+    if(!checkMilestone(book)) triggerConfetti();
   }
 
   async function markReturned(id){
@@ -5539,12 +5551,17 @@
     const activeBooks = visible.filter(b => !b.finished && !b.wishlist && !b.dnf);
     const wishlistBooks = visible.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
     const finishedAwaitingReturn = visible.filter(b => b.finished && !b.returned);
-    const finishedCount = visible.filter(b => b.finished).length;
+    // v46: graphic novels are counted separately from books
+    const finishedCount = visible.filter(b => b.finished && !isGraphicNovel(b)).length;
+    const finishedGraphicCount = visible.filter(b => b.finished && isGraphicNovel(b)).length;
 
     document.getElementById('finished-counter').textContent =
-      finishedCount === 0 ? 'No books finished yet' :
-      finishedCount === 1 ? '1 book finished so far' :
-      `${finishedCount} books finished so far`;
+      (finishedCount === 0 ? 'No books finished yet' :
+       finishedCount === 1 ? '1 book finished so far' :
+       `${finishedCount} books finished so far`) +
+      (finishedGraphicCount === 0 ? '' :
+       finishedGraphicCount === 1 ? ' · 1 graphic novel' :
+       ` · ${finishedGraphicCount} graphic novels`);
 
     const wishlistCountEl = document.getElementById('wishlist-tab-count');
     if(wishlistBooks.length > 0){
