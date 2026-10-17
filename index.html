@@ -132,7 +132,35 @@
 
   .wrap{ max-width: 760px; margin: 0 auto; }
 
-  header{ margin-bottom: 37px; }
+  header{ margin-bottom: 28px; position: relative; }
+  /* ---- v47: settings gear (header) + settings sheet sections ---- */
+  .btn-settings{
+    position: absolute;
+    top: -6px;
+    right: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1.5px solid #dcdcdc;
+    color: var(--ink-soft);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .btn-settings:hover{ color: var(--accent); border-color: var(--accent); }
+  .settings-section{ padding: 14px 0; border-top: 1px solid var(--line); }
+  .settings-section:first-of-type{ border-top: none; padding-top: 0; }
+  .settings-section-label{
+    font-size: 10.5px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+  .settings-section .calendar-status,
+  .settings-section .settings-row{ margin-top: 0; }
   .finished-counter{
     display: inline-block;
     margin-top: 12px;
@@ -698,6 +726,45 @@
     border: none;
   }
   .hr-date-edit button:hover{ opacity: 0.9; }
+  /* ---- v47: History rows are read-only until Edit is tapped ---- */
+  .history-row .hr-note{
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    font-style: italic;
+  }
+  .history-row .hr-edit-link{
+    background: none;
+    border: none;
+    padding: 6px 0 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .history-row .hr-edit-link:hover{ text-decoration: underline; }
+  .hr-edit-form{ margin-top: 10px; }
+  .hr-edit-form > label{
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .hr-edit-buttons{ display: flex; gap: 8px; margin-top: 14px; }
+  .hr-edit-buttons .hr-save{ margin-top: 0; }
+  .hr-cancel{
+    background: #fff;
+    color: var(--ink-soft);
+    border: 1.5px solid #dcdcdc;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
   .hr-unfinish{
     margin-top: 9px;
     font-size: 10.5px;
@@ -1625,7 +1692,17 @@
     .form-grid{ grid-template-columns: 1fr; }
     .card{ grid-template-columns: 1fr; }
     .actions{ flex-direction: row; }
+    /* v47: card buttons sit side by side on phones instead of stacking */
+    .card .actions-primary{ flex-direction: row; flex: 1; }
+    .card .actions-primary .btn-reading,
+    .card .actions-primary .btn-finish{ flex: 1; }
   }
+  /* v47: the Up Next hero spans full width at every size, so its buttons
+     always sit in one row */
+  .next-up .actions{ margin-top: 16px; }
+  .next-up .actions-primary{ flex-direction: row; }
+  .next-up .actions-primary .btn-reading,
+  .next-up .actions-primary .btn-finish{ flex: 1; }
 
   /* ---- v25: bottom navigation (replaces old top tab-bar) ---- */
   .bottom-nav{
@@ -2368,19 +2445,13 @@
 </div>
 <div class="wrap">
 
+  <!-- v47: header trimmed to title + counter; Calendar, max renewals and
+       Export moved into the settings sheet (#settings-overlay) -->
   <header>
+    <button class="btn-settings" onclick="openSettings()" title="Settings" aria-label="Settings">⚙</button>
     <p class="eyebrow">The Stack</p>
     <h1>Library Tracker</h1>
-    <p class="sub">What's due, what's renewed, and what to pick up next — synced across your devices.</p>
     <div class="finished-counter" id="finished-counter"></div>
-    <div class="calendar-status">
-      <button class="btn-calendar" id="calendar-btn" onclick="handleCalendarButtonClick()">Connect Google Calendar</button>
-      <span class="calendar-note" id="calendar-note">Due dates will sync automatically once connected.</span>
-    </div>
-    <div class="settings-row">
-      <label for="max-renewals-input" title="Customs House and Stanton allow 2, Stanhope Gardens allows 3">Max renewals (other libraries)</label>
-      <input type="number" id="max-renewals-input" min="0" max="20" value="3" onchange="setMaxRenewals(this.value)">
-    </div>
   </header>
 
   <!-- ---- v23: shared search — one box, same term followed across every
@@ -2422,7 +2493,6 @@
         <button class="sort-btn" id="sort-renewal" onclick="setSortMode('renewal')">Can't renew first</button>
       </div>
       <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()">Compact view</button>
-      <button class="btn-export" onclick="exportBackup()" title="Download a backup JSON file">↓ Export</button>
     </div>
     <div id="book-list"></div>
 
@@ -2624,6 +2694,34 @@
   </div>
 </div>
 
+<!-- ---- v47: settings sheet — same bottom-sheet shell as the add modal ---- -->
+<div class="add-modal-overlay" id="settings-overlay" onclick="if(event.target.id==='settings-overlay') closeSettings()">
+  <div class="add-modal-box">
+    <div class="add-modal-head">
+      <h3>Settings</h3>
+      <button class="add-modal-close" onclick="closeSettings()" title="Close">✕</button>
+    </div>
+    <div class="settings-section">
+      <p class="settings-section-label">Google Calendar</p>
+      <div class="calendar-status">
+        <button class="btn-calendar" id="calendar-btn" onclick="handleCalendarButtonClick()">Connect Google Calendar</button>
+        <span class="calendar-note" id="calendar-note">Due dates will sync automatically once connected.</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <p class="settings-section-label">Renewals</p>
+      <div class="settings-row">
+        <label for="max-renewals-input" title="Customs House and Stanton allow 2, Stanhope Gardens allows 3">Max renewals (other libraries)</label>
+        <input type="number" id="max-renewals-input" min="0" max="20" value="3" onchange="setMaxRenewals(this.value)">
+      </div>
+    </div>
+    <div class="settings-section">
+      <p class="settings-section-label">Backup</p>
+      <button class="btn-export" onclick="exportBackup()" title="Download a backup JSON file">↓ Export backup</button>
+    </div>
+  </div>
+</div>
+
 <!-- ---- v32: reading milestone celebration ---- -->
 <div class="milestone-overlay" id="milestone-overlay" onclick="if(event.target.id==='milestone-overlay') closeMilestoneCelebration()">
   <div class="milestone-box">
@@ -2785,6 +2883,15 @@
   }
   function closeAddModal(){
     const overlay = document.getElementById('add-modal-overlay');
+    if(overlay) overlay.classList.remove('open');
+  }
+  // ---- v47: settings sheet ----
+  function openSettings(){
+    const overlay = document.getElementById('settings-overlay');
+    if(overlay) overlay.classList.add('open');
+  }
+  function closeSettings(){
+    const overlay = document.getElementById('settings-overlay');
     if(overlay) overlay.classList.remove('open');
   }
   function handleAddModalOverlayClick(e){
@@ -5010,60 +5117,47 @@
     showToast('Moved back to the stack.');
   }
 
-  // ---- v21: retroactively fix a finished date after the fact (e.g. for
-  // books logged well after actually finishing them) ----
-  async function saveFinishedDate(id){
-    const input = document.getElementById('history-date-' + id);
-    const newDate = input.value;
-    if(!newDate){
-      showToast('Pick a date first.');
-      return;
-    }
-    const book = books.find(b => b.id === id);
-    const fields = { 'Finished Date': newDate };
-
-    if(isTempId(id)){
-      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Finished date — ${book.title}` });
-      book.finishedDate = newDate;
-      render();
-      showToast("Saved — will sync once you're back online.");
-      return;
-    }
-
-    try{
-      await airtableRequest(API_URL, {
-        method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields }] })
-      });
-      book.finishedDate = newDate;
-    }catch(e){
-      if(e.isNetworkFailure){
-        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Finished date — ${book.title}` });
-        book.finishedDate = newDate;
-        render();
-        showToast("Saved — will sync once you're back online.");
-        return;
-      }
-      console.error('Save finished date failed:', e);
-      showToast('Could not save that date — check your connection and try again.');
-      return;
-    }
+  // ---- v47: History entries are read-only until "Edit" is tapped; the
+  // edit form saves note, finished date (v21) and genre (v41) in one
+  // PATCH instead of three separate Save buttons. Same isTempId /
+  // network-failure pattern as the other inline edits. ----
+  const openHistoryEditIds = new Set();
+  function toggleHistoryEdit(id){
+    if(openHistoryEditIds.has(id)) openHistoryEditIds.delete(id);
+    else openHistoryEditIds.add(id);
     render();
-    showToast('Finished date updated.');
   }
 
-  // ---- v41: edit genre directly on a finished book — before this, genre
-  // was only editable on active stack/wishlist cards, so fixing it after
-  // the fact meant "move back to stack, edit, re-finish". Same
-  // isTempId/network-failure pattern as saveFinishedDate above.
-  async function saveHistoryGenre(id){
-    const genre = getGenreValue('history-' + id);
+  async function saveHistoryEdit(id){
     const book = books.find(b => b.id === id);
-    const fields = { 'Genre': genre || null };
+    if(!book) return;
+    const notes = document.getElementById('history-notes-' + id).value;
+    const finishedDate = document.getElementById('history-date-' + id).value;
+    const genre = getGenreValue('history-' + id);
+    if(!finishedDate){
+      showToast('Pick a finished date first.');
+      return;
+    }
+    const fields = {};
+    if(notes !== (book.notes || '')) fields['Notes'] = notes;
+    if(finishedDate !== book.finishedDate) fields['Finished Date'] = finishedDate;
+    if(genre !== (book.genre || '')) fields['Genre'] = genre || null;
+    if(Object.keys(fields).length === 0){
+      openHistoryEditIds.delete(id);
+      render();
+      return;
+    }
+    const apply = () => {
+      book.notes = notes;
+      book.finishedDate = finishedDate;
+      book.genre = genre;
+      openHistoryEditIds.delete(id);
+    };
+    const queue = () => enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `History edit — ${book.title}` });
 
     if(isTempId(id)){
-      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Genre — ${book.title}` });
-      book.genre = genre;
+      queue();
+      apply();
       render();
       showToast("Saved — will sync once you're back online.");
       return;
@@ -5074,21 +5168,21 @@
         method: 'PATCH',
         body: JSON.stringify({ records: [{ id, fields }] })
       });
-      book.genre = genre;
+      apply();
     }catch(e){
       if(e.isNetworkFailure){
-        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Genre — ${book.title}` });
-        book.genre = genre;
+        queue();
+        apply();
         render();
         showToast("Saved — will sync once you're back online.");
         return;
       }
-      console.error('Save genre failed:', e);
-      showToast('Could not save that genre — check your connection and try again.');
+      console.error('Save history edit failed:', e);
+      showToast('Could not save those changes — check your connection and try again.');
       return;
     }
     render();
-    showToast('Genre updated.');
+    showToast('Saved.');
   }
 
   // Tracked in JS (not just a DOM class) because overflow-menu clicks
@@ -5355,45 +5449,6 @@
     const key = 'library-tracker-dnf-collapsed';
     localStorage.setItem(key, localStorage.getItem(key) === 'true' ? 'false' : 'true');
     render();
-  }
-
-  async function saveNotes(id){
-    const textarea = document.getElementById('history-notes-' + id);
-    if(!textarea) return;
-    const notes = textarea.value;
-    const book = books.find(b => b.id === id);
-    const fields = { 'Notes': notes };
-
-    if(isTempId(id)){
-      enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Notes — ${book ? book.title : id}` });
-      if(book) book.notes = notes;
-      render();
-      showToast("Saved — will sync once you're back online.");
-      return;
-    }
-
-    try{
-      await airtableRequest(API_URL, {
-        method: 'PATCH',
-        body: JSON.stringify({ records: [{ id, fields }] })
-      });
-      if(book) book.notes = notes;
-      const savedEl = document.getElementById('history-saved-' + id);
-      if(savedEl){
-        savedEl.textContent = 'Saved.';
-        setTimeout(() => { if(savedEl) savedEl.textContent = ''; }, 2000);
-      }
-    }catch(e){
-      if(e.isNetworkFailure){
-        enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Notes — ${book ? book.title : id}` });
-        if(book) book.notes = notes;
-        render();
-        showToast("Saved — will sync once you're back online.");
-        return;
-      }
-      console.error('Save note failed:', e);
-      showToast('Could not save that note — check your connection and try again.');
-    }
   }
 
   const MAX_CURRENTLY_READING = 5;
@@ -5743,20 +5798,28 @@
               </div>
               <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
             </div>
-            <textarea id="history-notes-${b.id}" placeholder="Add a note or short review…">${escapeHtml(b.notes)}</textarea>
-            <button class="hr-save" onclick="saveNotes('${b.id}')">Save note</button>
-            <div class="hr-saved-note" id="history-saved-${b.id}"></div>
-            <div class="hr-date-edit">
-              <label for="history-date-${b.id}">Finished date</label>
-              <input type="date" id="history-date-${b.id}" value="${b.finishedDate}" max="${historyTodayStr}">
-              <button onclick="saveFinishedDate('${b.id}')">Save date</button>
-            </div>
-            <div class="hr-date-edit">
-              <label for="history-${b.id}-genre">Genre</label>
-              ${genreSelectHtml('history-' + b.id, b.genre)}
-              <button onclick="saveHistoryGenre('${b.id}')">Save genre</button>
-            </div>
-            <button class="hr-unfinish" onclick="unfinishBook('${b.id}')">↩ Not finished after all — move back to stack</button>
+            ${openHistoryEditIds.has(b.id) ? `
+              <div class="hr-edit-form">
+                <label for="history-notes-${b.id}">Note</label>
+                <textarea id="history-notes-${b.id}" placeholder="Add a note or short review…">${escapeHtml(b.notes)}</textarea>
+                <div class="hr-date-edit">
+                  <label for="history-date-${b.id}">Finished date</label>
+                  <input type="date" id="history-date-${b.id}" value="${b.finishedDate}" max="${historyTodayStr}">
+                </div>
+                <div class="hr-date-edit">
+                  <label for="history-${b.id}-genre">Genre</label>
+                  ${genreSelectHtml('history-' + b.id, b.genre)}
+                </div>
+                <div class="hr-edit-buttons">
+                  <button class="hr-save" onclick="saveHistoryEdit('${b.id}')">Save changes</button>
+                  <button class="hr-cancel" onclick="toggleHistoryEdit('${b.id}')">Cancel</button>
+                </div>
+                <button class="hr-unfinish" onclick="unfinishBook('${b.id}')">↩ Not finished after all — move back to stack</button>
+              </div>
+            ` : `
+              ${b.notes ? `<p class="hr-note">${escapeHtml(b.notes)}</p>` : ''}
+              <button class="hr-edit-link" onclick="toggleHistoryEdit('${b.id}')">${b.notes ? 'Edit' : 'Add note / edit'}</button>
+            `}
           </div>
         </div>
       `;
