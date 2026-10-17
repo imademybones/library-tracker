@@ -1289,27 +1289,37 @@
     font-weight: 600;
     margin: 0;
   }
-  .sort-group{
+  /* ---- v48: Sort dropdown + Compact toggle share one row ---- */
+  .stack-toolbar-controls{
     display: flex;
-    gap: 7px;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
   }
-  .sort-btn{
+  .sort-select-wrap{
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 10px;
     letter-spacing: 1px;
     text-transform: uppercase;
-    padding: 7px 12px;
-    border-radius: 3px;
-    background: #fff;
-    color: var(--ink-soft);
-    border: 1.5px solid #dcdcdc;
-  }
-  .sort-btn:hover{ color: var(--accent); border-color: var(--accent); }
-  .sort-btn.active{
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
+    color: var(--muted);
     font-weight: 600;
   }
+  .sort-select-wrap select{
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    background: #fff;
+    border: 1.5px solid #dcdcdc;
+    border-radius: 3px;
+    padding: 6px 8px;
+    max-width: 170px;
+  }
+  .stack-toolbar-controls .btn-compact-toggle{ white-space: nowrap; }
+  .sort-select-wrap select:focus{ outline: 2px solid var(--accent); outline-offset: 1px; }
 
   /* Stack rows — whitespace + a hairline divider, no card box. Urgency is
      signalled by the due-badge dot/colour below rather than a border. */
@@ -2074,6 +2084,20 @@
     margin-bottom: 16px;
   }
   .streak-flame{ margin-right: 7px; }
+  /* ---- v48: streak hints + headline/grouped stats ---- */
+  .streak-hint{ font-size: 11px; color: var(--muted); margin: 3px 0 0 27px; }
+  .stats-headline{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 24px;
+    padding-bottom: 21px;
+    margin-bottom: 21px;
+    border-bottom: 1px solid var(--line);
+  }
+  .stats-headline .stats-card .big-num{ font-size: 56px; color: var(--accent); }
+  .stats-headline .stats-card .big-label{ font-size: 12.5px; color: var(--ink-soft); }
+  .stats-grid-small{ grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; margin-bottom: 8px; }
+  .stats-grid-small .stats-card .big-num{ font-size: 26px; }
   .streak-row strong{ font-family: 'Fraunces', serif; font-size: 16px; }
   .goal-label{
     font-size: 12px;
@@ -2485,14 +2509,20 @@
 
     <div class="stack-toolbar">
       <p class="stack-label flow-section-label" id="stack-label">Rest of the stack</p>
-      <div class="sort-group">
-        <button class="sort-btn active" id="sort-next" onclick="setSortMode('next')">Read next</button>
-        <button class="sort-btn" id="sort-due" onclick="setSortMode('due')">Due date</button>
-        <button class="sort-btn" id="sort-title" onclick="setSortMode('title')">Title</button>
-        <button class="sort-btn" id="sort-author" onclick="setSortMode('author')">Author</button>
-        <button class="sort-btn" id="sort-renewal" onclick="setSortMode('renewal')">Can't renew first</button>
+      <!-- v48: one Sort dropdown replaces the five sort buttons -->
+      <div class="stack-toolbar-controls">
+        <label class="sort-select-wrap" for="sort-select">
+          <span>Sort</span>
+          <select id="sort-select" onchange="setSortMode(this.value)">
+            <option value="next">Read next</option>
+            <option value="due">Due date</option>
+            <option value="title">Title A–Z</option>
+            <option value="author">Author A–Z</option>
+            <option value="renewal">Can't renew first</option>
+          </select>
+        </label>
+        <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()">Compact view</button>
       </div>
-      <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()">Compact view</button>
     </div>
     <div id="book-list"></div>
 
@@ -2595,8 +2625,11 @@
 
   <!-- STATS TAB -->
   <div class="tab-panel" id="tab-panel-stats">
+    <!-- v48: this year's headline numbers first, then both streaks
+         together, then the smaller numbers grouped -->
+    <div id="stats-headline"></div>
     <div id="stats-streak-card"></div>
-    <div class="stats-grid" id="stats-grid"></div>
+    <div id="stats-grid"></div>
     <div id="stats-extra"></div>
   </div>
 
@@ -4056,7 +4089,10 @@
   }
 
   // ---- v27: streak + daily-goal card, rendered at the top of the Stats tab ----
-  function renderStreakGoalCard(){
+  // v48: both streaks live here, clearly labelled — the daily one (pages
+  // logged) and the monthly one (computed in renderStats, a finish each
+  // month). They used to sit in two places with near-identical names.
+  function renderStreakGoalCard(monthStreak){
     const el = document.getElementById('stats-streak-card');
     if(!el) return;
     const streak = computeReadingStreak();
@@ -4064,7 +4100,15 @@
     const pct = dailyGoal > 0 ? Math.max(0, Math.min(100, Math.round((todayPages / dailyGoal) * 100))) : 0;
     el.innerHTML = `
       <div class="streak-goal-card">
-        <div class="streak-row"><span class="streak-flame">🔥</span>Reading streak: <strong>${streak} day${streak === 1 ? '' : 's'}</strong></div>
+        <div class="streak-row">
+          <span class="streak-flame">🔥</span>Daily streak: <strong>${streak} day${streak === 1 ? '' : 's'}</strong>
+          <div class="streak-hint">Days in a row with pages logged</div>
+        </div>
+        ${monthStreak === null || monthStreak === undefined ? '' : `
+        <div class="streak-row">
+          <span class="streak-flame">📅</span>Monthly streak: <strong>${monthStreak} month${monthStreak === 1 ? '' : 's'}</strong>
+          <div class="streak-hint">Months in a row with at least one finish</div>
+        </div>`}
         <div class="goal-block">
           <div class="goal-label">Read <span class="goal-num-edit" onclick="toggleGoalEdit()" title="Tap to change your daily goal">${dailyGoal}</span> pages</div>
           <div class="goal-track"><div class="goal-fill" style="width:${pct}%"></div></div>
@@ -5584,18 +5628,11 @@
 
   function render(){
     if(!dataLoaded) return;
-    // Sync sort toolbar buttons
-    ['next','due','title','author','renewal'].forEach(m => {
-      document.getElementById('sort-' + m).classList.toggle('active', sortMode === m);
-    });
+    // Sync sort dropdown (v48 — the label no longer repeats the sort mode)
+    const sortSelect = document.getElementById('sort-select');
+    if(sortSelect) sortSelect.value = sortMode;
     const compactBtn = document.getElementById('compact-toggle-btn');
     if(compactBtn) compactBtn.classList.toggle('active', compactMode);
-    document.getElementById('stack-label').textContent =
-      sortMode === 'next' ? 'Rest of the stack — read next (fewest renewals left first)' :
-      sortMode === 'due' ? 'Rest of the stack — soonest due first' :
-      sortMode === 'title' ? 'Rest of the stack — A–Z by title' :
-      sortMode === 'author' ? 'Rest of the stack — A–Z by author' :
-      "Rest of the stack — can't renew first";
     const renewalsInput = document.getElementById('max-renewals-input');
     if(renewalsInput && document.activeElement !== renewalsInput) renewalsInput.value = maxRenewals;
 
@@ -6240,10 +6277,12 @@
   }
 
   function renderStats(){
-    renderStreakGoalCard();
+    const headlineEl = document.getElementById('stats-headline');
     const gridEl = document.getElementById('stats-grid');
     const extraEl = document.getElementById('stats-extra');
     if(books.length === 0){
+      renderStreakGoalCard(null);
+      headlineEl.innerHTML = '';
       gridEl.innerHTML = '<p class="stats-empty">No data yet — add a book to see stats here.</p>';
       extraEl.innerHTML = '';
       return;
@@ -6299,18 +6338,28 @@
       streakCursor.setMonth(streakCursor.getMonth() - 1);
     }
 
+    renderStreakGoalCard(readingStreak);
+    headlineEl.innerHTML = `
+      <div class="stats-headline">
+        <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Books in ${currentYear}</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-graphic-year">0</div><div class="big-label">Graphic novels in ${currentYear}</div></div>
+      </div>
+    `;
     gridEl.innerHTML = `
-      <div class="stats-card"><div class="big-num" id="stat-finished">0</div><div class="big-label">Finished</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-reading">0</div><div class="big-label">Reading now</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-in-stack">0</div><div class="big-label">In the stack</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-wishlist">0</div><div class="big-label">On wishlist</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-avg-renewals">0</div><div class="big-label">Avg renewals/book</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Finished in ${currentYear}</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-graphic-year">0</div><div class="big-label">Graphic novels in ${currentYear}</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-graphic">0</div><div class="big-label">Graphic novels read</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-streak">0</div><div class="big-label">Month streak</div></div>
-      <div class="stats-card"><div class="big-num" id="stat-dnf">0</div><div class="big-label">Did not finish</div></div>
+      <div class="stats-section-title">Right now</div>
+      <div class="stats-grid stats-grid-small">
+        <div class="stats-card"><div class="big-num" id="stat-reading">0</div><div class="big-label">Reading now</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-in-stack">0</div><div class="big-label">In the stack</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-wishlist">0</div><div class="big-label">On wishlist</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-dnf">0</div><div class="big-label">Did not finish</div></div>
+      </div>
+      <div class="stats-section-title">All time</div>
+      <div class="stats-grid stats-grid-small">
+        <div class="stats-card"><div class="big-num" id="stat-finished">0</div><div class="big-label">Books finished</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-graphic">0</div><div class="big-label">Graphic novels read</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-avg-renewals">0</div><div class="big-label">Avg renewals/book</div></div>
+      </div>
     `;
     animateStatNum('stat-finished', finished.length);
     animateStatNum('stat-reading', reading.length);
@@ -6321,7 +6370,6 @@
     animateStatNum('stat-finished-year', finishedThisYear);
     animateStatNum('stat-graphic-year', graphicThisYear);
     animateStatNum('stat-graphic', finishedGraphic.length);
-    animateStatNum('stat-streak', readingStreak);
     animateStatNum('stat-dnf', books.filter(b => b.dnf).length);
 
     // Top authors (by number of finished books)
