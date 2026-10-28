@@ -549,6 +549,10 @@
     margin-top: 7px;
   }
   .return-tile .tile-unfinish-btn:hover{ border-color: var(--accent); color: var(--accent); }
+  /* ---- v49: DNF books still awaiting return reuse the return-tile shape,
+       just with a red edge instead of green so the two shelves read as
+       distinct at a glance ---- */
+  .return-tile.dnf-tile{ border-left-color: var(--red); }
 
   .history-label{
     font-size: 11px;
@@ -2527,6 +2531,9 @@
     <div id="book-list"></div>
 
     <div id="return-shelf-wrap"></div>
+    <!-- ---- v49: DNF books stay here, below the regular return shelf, until
+         they're actually handed back — see dnf-return-shelf-wrap in render() ---- -->
+    <div id="dnf-return-shelf-wrap"></div>
   </div>
 
   <!-- WISHLIST TAB -->
@@ -4610,10 +4617,11 @@
     const prevDnfReason = book.dnfReason;
     const prevRenewCount = book.renewCount;
     const prevCurrentPage = book.currentPage;
+    const prevReturned = book.returned;
     const fields = {
       'DNF': false, 'DNF Date': null, 'DNF Reason': null,
       'Due Date': dueDate, 'Borrow Date': today, 'Renewable': renewable,
-      'Renew Count': 0, 'Current Page': 0
+      'Renew Count': 0, 'Current Page': 0, 'Returned': false
     };
 
     if(isTempId(id)){
@@ -4626,6 +4634,7 @@
       book.renewable = renewable;
       book.renewCount = 0;
       book.currentPage = 0;
+      book.returned = false;
       render();
       showToast("Saved — will sync once you're back online.");
       return;
@@ -4644,6 +4653,7 @@
       book.renewable = renewable;
       book.renewCount = 0;
       book.currentPage = 0;
+      book.returned = false;
       await syncCalendarEvent(book);
     }catch(e){
       if(e.isNetworkFailure){
@@ -4656,6 +4666,7 @@
         book.renewable = renewable;
         book.renewCount = 0;
         book.currentPage = 0;
+        book.returned = false;
         render();
         showToast("Saved — will sync once you're back online.");
         return;
@@ -4665,16 +4676,17 @@
       return;
     }
     render();
-    showToast('Marked as borrowed.', 'Undo', () => undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage));
+    showToast('Marked as borrowed.', 'Undo', () => undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage, prevReturned));
   }
 
-  async function undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage){
+  async function undoDnfBorrowAgain(id, prevDnfDate, prevDnfReason, prevRenewCount, prevCurrentPage, prevReturned){
     const book = books.find(b => b.id === id);
     if(!book) return;
     const fields = {
       'DNF': true, 'DNF Date': prevDnfDate, 'DNF Reason': prevDnfReason || null,
       'Due Date': null, 'Borrow Date': null,
-      'Renew Count': prevRenewCount, 'Current Page': prevCurrentPage
+      'Renew Count': prevRenewCount, 'Current Page': prevCurrentPage,
+      'Returned': !!prevReturned
     };
     try{
       await airtableRequest(API_URL, {
@@ -4688,6 +4700,7 @@
       book.borrowDate = '';
       book.renewCount = prevRenewCount;
       book.currentPage = prevCurrentPage;
+      book.returned = !!prevReturned;
       await removeCalendarEvent(book);
     }catch(e){
       console.error('Undo borrow again failed:', e);
@@ -5643,6 +5656,10 @@
     const activeBooks = visible.filter(b => !b.finished && !b.wishlist && !b.dnf);
     const wishlistBooks = visible.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
     const finishedAwaitingReturn = visible.filter(b => b.finished && !b.returned);
+    // v49: a DNF'd book is still a physical loan sitting on the shelf until
+    // it's actually returned — keep it visible in the stack (separate from
+    // the wishlist's "borrow again" entry) until then.
+    const dnfAwaitingReturn = visible.filter(b => b.dnf && !b.returned);
     // v46: graphic novels are counted separately from books
     const finishedCount = visible.filter(b => b.finished && !isGraphicNovel(b)).length;
     const finishedGraphicCount = visible.filter(b => b.finished && isGraphicNovel(b)).length;
@@ -5783,6 +5800,28 @@
               <p class="tile-finished">Finished ${fmtDate(b.finishedDate)}</p>
               <button class="tile-returned-btn" onclick="markReturned('${b.id}')">Mark returned</button>
               <button class="tile-unfinish-btn" onclick="unfinishBook('${b.id}')">Not finished yet</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // v49: DNF'd, awaiting return shelf — same shape as the one above, kept
+    // separate so "finished" and "gave up on" aren't conflated.
+    const dnfReturnWrap = document.getElementById('dnf-return-shelf-wrap');
+    if(dnfAwaitingReturn.length === 0){
+      dnfReturnWrap.innerHTML = '';
+    }else{
+      dnfReturnWrap.innerHTML = `
+        <p class="return-shelf-label">Didn't finish — still need to go back</p>
+        <div class="return-shelf">
+          ${dnfAwaitingReturn.map(b => `
+            <div class="return-tile dnf-tile">
+              <p class="tile-title">${escapeHtml(b.title)}</p>
+              <p class="tile-author">${escapeHtml(b.author || 'Author unknown')}</p>
+              <p class="tile-finished">Didn't finish ${fmtDate(b.dnfDate)}</p>
+              <button class="tile-returned-btn" onclick="markReturned('${b.id}')">Mark returned</button>
+              <button class="tile-unfinish-btn" onclick="undoDnf('${b.id}')">Resume reading</button>
             </div>
           `).join('')}
         </div>
