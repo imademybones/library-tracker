@@ -150,6 +150,17 @@
      Open Library 4.1 · 250 ratings" under the author line). Settings →
      Community ratings now looks up wishlist books as well as finished ones,
      and adding a book to the wishlist looks it up in the background. ---- */
+  /* ---- v58: owned books + manual Goodreads average. New Airtable fields
+     "Owned" (checkbox) and "Goodreads Avg" (number, re-created — the v54
+     field of that name became "OL Avg" in v55). The Add modal gets a
+     "Library loan / I own it" toggle; owned books skip source, dates,
+     renewals and calendar sync, and appear in a new "My shelf" section
+     below the loans list. The due dashboard, overdue counts and sticky
+     header count loans only; an owned book is only the Up Next hero when
+     no unread loans remain. Finished owned books never wait to be
+     returned, and History marks them "Owned". Goodreads avg can be typed
+     in the Add modal or the card's Edit box, and shows beside the Open
+     Library average on stack cards, wishlist cards and History. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -734,6 +745,19 @@
   .gr-avg{ font-size: 10.5px; color: var(--muted); }
   /* v57: Open Library average on wishlist cards */
   .wl-ol{ margin: 3px 0 0; display: flex; align-items: center; gap: 4px; }
+  /* ---- v58: owned books ---- */
+  .kind-toggle{ display: flex; gap: 8px; margin: 0 0 16px; }
+  .kind-toggle label{
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+    border: 1.5px solid #dcdcdc; border-radius: 3px; padding: 9px 10px;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer;
+  }
+  .kind-toggle label:has(input:checked){ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .kind-toggle input{ accent-color: var(--accent); margin: 0; }
+  #add-form-grid.kind-owned .loan-only{ display: none; }
+  .due-badge.badge-owned{ color: var(--ink-soft); }
+  .hr-badge.badge-owned{ color: var(--accent); }
+  .section-count{ color: var(--muted); font-weight: 500; margin-left: 4px; }
   .wl-ol .star{ font-size: 11px; color: #d9a400; }
   .wl-ol .gr-avg{ font-size: 11px; color: var(--ink-soft); }
   .finish-rating{ display: inline-flex; align-items: center; }
@@ -2722,6 +2746,9 @@
     </div>
     <div id="book-list"></div>
 
+    <!-- v58: books you own (no due date) -->
+    <div id="my-shelf-wrap"></div>
+
     <div id="return-shelf-wrap"></div>
     <!-- ---- v49: DNF books stay here, below the regular return shelf, until
          they're actually handed back — see dnf-return-shelf-wrap in render() ---- -->
@@ -2861,7 +2888,12 @@
       <h3>+ Add a book to the stack</h3>
       <button class="add-modal-close" onclick="closeAddModal()" title="Close">✕</button>
     </div>
-    <div class="form-grid">
+    <!-- v58: library loan vs a book you own -->
+    <div class="kind-toggle" role="radiogroup" aria-label="Kind of book">
+      <label><input type="radio" name="f-kind" value="loan" checked onchange="setAddKind('loan')"> Library loan</label>
+      <label><input type="radio" name="f-kind" value="owned" onchange="setAddKind('owned')"> I own it</label>
+    </div>
+    <div class="form-grid" id="add-form-grid">
       <div class="full">
         <label for="f-title">Title</label>
         <input type="text" id="f-title" placeholder="The Strength of the Few">
@@ -2870,7 +2902,7 @@
         <label for="f-author">Author</label>
         <input type="text" id="f-author" placeholder="James Islington">
       </div>
-      <div class="full">
+      <div class="full loan-only">
         <label for="f-source-select">Source (optional)</label>
         <select id="f-source-select" onchange="handleSourceSelectChange('f-source')">
           <option value="">– none –</option>
@@ -2881,11 +2913,11 @@
         </select>
         <input type="text" id="f-source-other" placeholder="Enter library name" style="display:none; margin-top:8px;">
       </div>
-      <div>
+      <div class="loan-only">
         <label for="f-borrow">Borrow date</label>
         <input type="date" id="f-borrow">
       </div>
-      <div>
+      <div class="loan-only">
         <label for="f-due">Due date</label>
         <input type="date" id="f-due">
       </div>
@@ -2914,7 +2946,11 @@
           <option value="Classics">Classics</option>
         </select>
       </div>
-      <div class="full checkbox-row">
+      <div>
+        <label for="f-gravg">Goodreads avg (optional)</label>
+        <input type="text" id="f-gravg" placeholder="e.g. 4.12" inputmode="decimal">
+      </div>
+      <div class="full checkbox-row loan-only">
         <input type="checkbox" id="f-renewable" checked>
         <label for="f-renewable">This book can be renewed</label>
       </div>
@@ -3127,6 +3163,11 @@
     if(borrowInput && !borrowInput.value) borrowInput.value = todayISO();
     if(dueInput && !dueInput.value) dueInput.value = isoDateOffset(21);
     applySourceDefault('f-source');
+  }
+  // v58: hide the loan-only fields (source, dates, renewable) for owned books
+  function setAddKind(kind){
+    const grid = document.getElementById('add-form-grid');
+    if(grid) grid.classList.toggle('kind-owned', kind === 'owned');
   }
   function closeAddModal(){
     const overlay = document.getElementById('add-modal-overlay');
@@ -3844,6 +3885,7 @@
   // Silently no-ops if Calendar isn't connected — never blocks the main save.
   async function syncCalendarEvent(book){
     if(!isCalendarConnected()) return;
+    if(book.owned || !book.dueDate) return; // v58: owned books have no due date
     try{
       let eventId = book.calendarEventId;
       if(eventId){
@@ -4051,7 +4093,10 @@
       // v55: Open Library community rating, cached in Airtable. olCount is
       // null until looked up; 0 means "looked up, no ratings on Open Library".
       olAvg: f['OL Avg'] || null,
-      olCount: (typeof f['OL Ratings Count'] === 'number') ? f['OL Ratings Count'] : null
+      olCount: (typeof f['OL Ratings Count'] === 'number') ? f['OL Ratings Count'] : null,
+      // v58: hand-entered Goodreads average, and books you own (no loan)
+      goodreadsAvg: (typeof f['Goodreads Avg'] === 'number') ? f['Goodreads Avg'] : null,
+      owned: !!f['Owned']
     };
   }
 
@@ -4407,6 +4452,7 @@
   }
 
   function statusClass(book){
+    if(book.owned) return 'status-ok'; // v58
     const d = daysUntil(book.dueDate);
     if(!book.renewable && d <= 3) return 'status-final';
     if(d <= 3) return 'status-soon';
@@ -4453,17 +4499,19 @@
     let totalPages = parseInt(document.getElementById('f-totalpages').value, 10);
     if(isNaN(totalPages) || totalPages < 0) totalPages = 0;
     const genre = getGenreValue('f');
+    // v58
+    const owned = (document.querySelector('input[name="f-kind"]:checked') || {}).value === 'owned';
+    const grAvg = parseAvgInput(document.getElementById('f-gravg').value);
 
-    if(!title || !dueDate){
-      showToast('At least a title and a due date are needed to add this to the stack.');
+    if(!title || (!dueDate && !owned)){
+      showToast(owned ? 'A title is needed to add this to your shelf.' : 'At least a title and a due date are needed to add this to the stack.');
       return;
     }
 
     const fields = {
       'Title': title,
       'Author': author,
-      'Due Date': dueDate,
-      'Renewable': renewable,
+      'Renewable': owned ? false : renewable,
       'Renew Count': 0,
       'Currently Reading': false,
       'Finished': false,
@@ -4472,8 +4520,14 @@
       'Total Pages': totalPages,
       'Genre': genre || null
     };
-    if(borrowDate) fields['Borrow Date'] = borrowDate;
-    if(source) fields['Source'] = source;
+    if(owned){
+      fields['Owned'] = true;
+    }else{
+      fields['Due Date'] = dueDate;
+      if(borrowDate) fields['Borrow Date'] = borrowDate;
+      if(source) fields['Source'] = source;
+    }
+    if(grAvg) fields['Goodreads Avg'] = grAvg;
 
     try{
       const data = await airtableRequest(API_URL, {
@@ -4483,7 +4537,7 @@
       const newBook = recordToBook(data.records[0]);
       books.push(newBook);
       await syncCalendarEvent(newBook);
-      rememberLastSource(source);
+      if(!owned) rememberLastSource(source);
     }catch(e){
       if(e.isNetworkFailure){
         const tempId = 'temp-' + crypto.randomUUID();
@@ -4495,7 +4549,7 @@
           tempId,
           description: `Add — ${title}`
         });
-        rememberLastSource(source);
+        if(!owned) rememberLastSource(source);
       }else{
         console.error('Add failed:', e);
         showToast('Could not save that book — check your connection and try again.');
@@ -4511,9 +4565,10 @@
     document.getElementById('f-renewable').checked = true;
     document.getElementById('f-totalpages').value = '';
     document.getElementById('f-genre').value = '';
+    document.getElementById('f-gravg').value = '';
     closeAddModal();
     render();
-    showToast('Added to the stack.');
+    showToast(owned ? 'Added to your shelf.' : 'Added to the stack.');
   }
 
   // ---- v37: shared by the manual quick-add form and the new search-and-add
@@ -5699,8 +5754,18 @@
   // v57: one renderer for the Open Library average, shared by History rows
   // and wishlist cards. Nothing when not looked up or no ratings.
   function olAvgHtml(b){
-    if(!b.olCount) return '';
-    return `<span class="gr-avg" title="Open Library community average">Open Library ${Number(b.olAvg).toFixed(1)} · ${b.olCount} rating${b.olCount === 1 ? '' : 's'}</span>`;
+    // v58: also shows the hand-entered Goodreads average when set
+    const parts = [];
+    if(b.goodreadsAvg) parts.push(`<span title="Goodreads average (entered by you)">Goodreads ${Number(b.goodreadsAvg).toFixed(2)}</span>`);
+    if(b.olCount) parts.push(`<span title="Open Library community average">Open Library ${Number(b.olAvg).toFixed(1)} · ${b.olCount} rating${b.olCount === 1 ? '' : 's'}</span>`);
+    return parts.length ? `<span class="gr-avg">${parts.join(' · ')}</span>` : '';
+  }
+  function hasCommunityRating(b){ return !!(b.goodreadsAvg || b.olCount); }
+  // v58: parse an optional 0–5 average typed into a form ("4.12", "4,12")
+  function parseAvgInput(v){
+    const n = parseFloat(String(v || '').replace(',', '.'));
+    if(isNaN(n) || n <= 0) return null;
+    return Math.min(5, Math.round(n * 100) / 100);
   }
 
   function olFields(r){
@@ -5963,9 +6028,12 @@
     let currentPage = parseInt(document.getElementById('edit-currentpage-' + id).value, 10);
     let totalPages = parseInt(document.getElementById('edit-totalpages-' + id).value, 10);
     const genre = getGenreValue('edit-' + id);
+    // v58
+    const owned = document.getElementById('edit-owned-' + id).checked;
+    const grAvg = parseAvgInput(document.getElementById('edit-gravg-' + id).value);
 
-    if(!title || !dueDate){
-      showToast('A title and a due date are both needed.');
+    if(!title || (!dueDate && !owned)){
+      showToast(owned ? 'A title is needed.' : 'A title and a due date are both needed.');
       return;
     }
     if(isNaN(renewCount) || renewCount < 0) renewCount = 0;
@@ -5986,9 +6054,14 @@
       'Renew Count': renewCount,
       'Current Page': currentPage,
       'Total Pages': totalPages,
-      'Genre': genre || null
+      'Genre': genre || null,
+      'Owned': owned,
+      'Goodreads Avg': grAvg
     };
+    // v58: owned books have no loan — clear the due date
+    if(owned){ fields['Due Date'] = null; fields['Renewable'] = false; }
     if(borrowDate) fields['Borrow Date'] = borrowDate;
+    const wasOwned = book.owned;
 
     if(isTempId(id)){
       enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Edit — ${title}` });
@@ -6002,6 +6075,9 @@
       book.currentPage = currentPage;
       book.totalPages = totalPages;
       book.genre = genre;
+      book.owned = owned;
+      book.goodreadsAvg = grAvg;
+      if(owned){ book.renewable = false; book.dueDate = ''; }
       await logReadingProgress(currentPage - previousPage);
       openEditIds.delete(id);
       render();
@@ -6024,7 +6100,12 @@
       book.currentPage = currentPage;
       book.totalPages = totalPages;
       book.genre = genre;
-      await syncCalendarEvent(book);
+      book.owned = owned;
+      book.goodreadsAvg = grAvg;
+      if(owned){ book.renewable = false; book.dueDate = ''; }
+      // v58: a loan converted to owned drops its due-date calendar event
+      if(owned && !wasOwned && book.calendarEventId) await removeCalendarEvent(book);
+      else await syncCalendarEvent(book);
     }catch(e){
       if(e.isNetworkFailure){
         enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Edit — ${title}` });
@@ -6038,6 +6119,9 @@
         book.currentPage = currentPage;
         book.totalPages = totalPages;
         book.genre = genre;
+        book.owned = owned;
+        book.goodreadsAvg = grAvg;
+        if(owned){ book.renewable = false; book.dueDate = ''; }
         await logReadingProgress(currentPage - previousPage);
         openEditIds.delete(id);
         render();
@@ -6196,6 +6280,8 @@
   // variant 'small' is used on the currently-reading tiles where space is
   // tighter and the exact date isn't shown underneath.
   function dueBadgeHtml(book, variant){
+    // v58: owned books have no due date
+    if(book.owned) return `<span class="due-badge-wrap"><span class="due-badge badge-owned"><span class="due-badge-emoji">📚</span>On your shelf</span></span>`;
     const info = dueBadgeInfo(book);
     const small = variant === 'small';
     const badgeCls = small ? 'due-badge small' : 'due-badge';
@@ -6253,11 +6339,11 @@
 
     const activeBooks = visible.filter(b => !b.finished && !b.wishlist && !b.dnf);
     const wishlistBooks = visible.filter(b => b.wishlist).sort((a,b) => (a.wishlistOrder||0) - (b.wishlistOrder||0));
-    const finishedAwaitingReturn = visible.filter(b => b.finished && !b.returned);
+    const finishedAwaitingReturn = visible.filter(b => b.finished && !b.returned && !b.owned);
     // v49: a DNF'd book is still a physical loan sitting on the shelf until
     // it's actually returned — keep it visible in the stack (separate from
     // the wishlist's "borrow again" entry) until then.
-    const dnfAwaitingReturn = visible.filter(b => b.dnf && !b.returned);
+    const dnfAwaitingReturn = visible.filter(b => b.dnf && !b.returned && !b.owned);
     // v46: graphic novels are counted separately from books
     const finishedCount = visible.filter(b => b.finished && !isGraphicNovel(b)).length;
     const finishedGraphicCount = visible.filter(b => b.finished && isGraphicNovel(b)).length;
@@ -6284,9 +6370,17 @@
     const readingBooks = activeBooks.filter(b => b.currentlyReading);
     renderReadingWidget(readingBooks);
 
+    // v58: owned books live in their own "My shelf" section; loans keep the
+    // due-date-driven dashboard, hero and list.
+    const loanBooks = activeBooks.filter(b => !b.owned);
+    const shelfBooks = activeBooks.filter(b => b.owned);
+    const byTitle = (a, b) => (a.title || '').localeCompare(b.title || '');
     // Hero: v44 — top "Read next" pick (fewest renewals left, then soonest
-    // due) among active books not currently being read
-    const upcoming = activeBooks.filter(b => !b.currentlyReading).sort(compareReadNext);
+    // due) among active loans not currently being read. v58: an owned book
+    // is only picked when there are no unread loans.
+    const upcomingLoans = loanBooks.filter(b => !b.currentlyReading).sort(compareReadNext);
+    const upcomingOwned = shelfBooks.filter(b => !b.currentlyReading).sort(byTitle);
+    const upcoming = upcomingLoans.length ? upcomingLoans : upcomingOwned;
     let heroPickId = null; // v25: excluded from "Rest of Stack" below so it isn't shown twice
 
     if(activeBooks.length === 0){
@@ -6314,12 +6408,12 @@
             <div class="next-up-text">
               <div class="hero-top">
                 <div>
-                  <div class="tag">Read next</div>
+                  <div class="tag">${next.owned ? 'From your shelf' : 'Read next'}</div>
                   <h2>${escapeHtml(next.title)}</h2>
                   <div class="author">${escapeHtml(next.author || 'Author unknown')}</div>
                 </div>
                 <div class="hero-top-right">
-                  ${dueStampHtml(next.dueDate)}
+                  ${next.owned ? '' : dueStampHtml(next.dueDate)}
                 </div>
               </div>
               <div class="due-line">${dueBadgeHtml(next, 'hero')}</div>
@@ -6334,17 +6428,18 @@
     // (including ones currently being read — they still have a due date).
     // Overdue/due-today counts are hoisted out of the dashboard branch below
     // so the sticky mini-header (further down) can reuse them.
-    const overdueCount = activeBooks.filter(b => daysUntil(b.dueDate) < 0).length;
-    const dueTodayCount = activeBooks.filter(b => daysUntil(b.dueDate) === 0).length;
+    // v58: loans only — owned books have no due date
+    const overdueCount = loanBooks.filter(b => daysUntil(b.dueDate) < 0).length;
+    const dueTodayCount = loanBooks.filter(b => daysUntil(b.dueDate) === 0).length;
     const dashSlot = document.getElementById('due-dashboard-slot');
-    if(activeBooks.length === 0){
+    if(loanBooks.length === 0){
       dashSlot.innerHTML = '';
     }else{
-      const dueWeekCount = activeBooks.filter(b => { const d = daysUntil(b.dueDate); return d > 0 && d <= 7; }).length;
-      const plentyCount = activeBooks.filter(b => daysUntil(b.dueDate) > 7).length;
+      const dueWeekCount = loanBooks.filter(b => { const d = daysUntil(b.dueDate); return d > 0 && d <= 7; }).length;
+      const plentyCount = loanBooks.filter(b => daysUntil(b.dueDate) > 7).length;
       dashSlot.innerHTML = `
         <div class="due-dashboard">
-          <p class="dash-label">${activeBooks.length} active loan${activeBooks.length === 1 ? '' : 's'}</p>
+          <p class="dash-label">${loanBooks.length} active loan${loanBooks.length === 1 ? '' : 's'}</p>
           <div class="dash-grid">
             <div class="dash-card overdue ${overdueCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${overdueCount}</div><div class="dash-lbl">Overdue</div></div>
             <div class="dash-card due-today ${dueTodayCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${dueTodayCount}</div><div class="dash-lbl">Due today</div></div>
@@ -6370,7 +6465,7 @@
       }
     }
     if(stickyCountsEl){
-      stickyCountsEl.textContent = activeBooks.length > 0
+      stickyCountsEl.textContent = loanBooks.length > 0
         ? `${overdueCount} overdue · ${dueTodayCount} due today`
         : '';
     }
@@ -6474,7 +6569,7 @@
                 <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${olAvgHtml(b)}</p>
                 ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
               </div>
-              <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
+              <span class="hr-badge ${b.owned ? 'badge-owned' : (b.returned ? 'badge-returned' : 'badge-pending')}">${b.owned ? 'Owned' : (b.returned ? 'Returned' : 'Awaiting return')}</span>
             </div>
             ${openHistoryEditIds.has(b.id) ? `
               <div class="hr-edit-form">
@@ -6633,7 +6728,7 @@
               <div>
                 <p class="wl-title">${priorityBadge}${escapeHtml(b.title)}${pendingBadgeHtml(b, 'wl-pending-badge')}</p>
                 <p class="wl-meta">${escapeHtml(b.author || 'Author unknown')}${b.source ? ' · from ' + escapeHtml(b.source) : ''}</p>
-                ${b.olCount ? `<p class="wl-ol"><span class="star on" aria-hidden="true">★</span> ${olAvgHtml(b)}</p>` : ''}
+                ${hasCommunityRating(b) ? `<p class="wl-ol"><span class="star on" aria-hidden="true">★</span> ${olAvgHtml(b)}</p>` : ''}
                 ${tagsHtml}
               </div>
               <div class="wl-actions">
@@ -6673,9 +6768,23 @@
       });
     }
 
+    // ---- v58: "My shelf" — owned books not being read and not the hero
+    const shelfWrap = document.getElementById('my-shelf-wrap');
+    if(shelfWrap){
+      const shelfList = shelfBooks.filter(b => !b.currentlyReading && b.id !== heroPickId);
+      const shelfSearched = searchTerm ? shelfList.filter(b => matchesSearch(b.title, b.author, b.genre)) : shelfList;
+      shelfWrap.innerHTML = shelfList.length === 0 ? '' : `
+        <p class="flow-section-label">My shelf <span class="section-count">${shelfList.length}</span></p>
+        ${shelfSearched.length === 0
+          ? '<div class="empty-state">No books on your shelf match that search.</div>'
+          : shelfSearched.sort(byTitle).map(b => effectiveCompact(b.id) ? renderCompactCard(b) : renderExpandedCard(b)).join('')}
+      `;
+    }
+
     // v25: "Rest of Stack" is everything active MINUS whatever's already
     // shown above in Now Reading or Up Next, so no book appears twice.
-    const restOfStack = activeBooks.filter(b => !b.currentlyReading && b.id !== heroPickId);
+    // v58: loans only; owned books are in "My shelf" above.
+    const restOfStack = loanBooks.filter(b => !b.currentlyReading && b.id !== heroPickId);
     const searched = searchTerm
       ? restOfStack.filter(b => matchesSearch(b.title, b.author, b.source, b.genre))
       : restOfStack;
@@ -6684,7 +6793,9 @@
     if(sorted.length === 0){
       listEl.innerHTML = searchTerm
         ? '<div class="empty-state">No books in the stack match that search.</div>'
-        : '<div class="empty-state">Nothing else queued up right now.</div>';
+        : (loanBooks.length === 0
+            ? '<div class="empty-state">No library loans right now.</div>'
+            : '<div class="empty-state">Nothing else queued up right now.</div>');
       return;
     }
 
@@ -6731,7 +6842,7 @@
             <span class="compact-author">${escapeHtml(book.author || 'Author unknown')}</span>
           </div>
           ${compactProgressRingHtml(book)}
-          <span class="compact-due">${fmtDate(book.dueDate)}</span>
+          <span class="compact-due">${book.owned ? 'Owned' : fmtDate(book.dueDate)}</span>
         </div>
       </div>
     `;
@@ -6754,7 +6865,7 @@
     const today = new Date().toISOString().split('T')[0];
     const bookMax = maxRenewalsFor(book);
     const atLimit = book.renewCount >= bookMax;
-    const canRenew = book.renewable && !atLimit;
+    const canRenew = !book.owned && book.renewable && !atLimit;
 
     // ---- v50: one primary action per card. An overdue / due-within-3-days
     // book that can still be renewed gets Renew as its main button; a book
@@ -6808,7 +6919,11 @@
           <input type="date" id="edit-borrow-${book.id}" value="${book.borrowDate}">
         </div>
         <div class="edit-row">
-          <input type="date" id="edit-due-${book.id}" value="${book.dueDate}">
+          <input type="date" id="edit-due-${book.id}" value="${book.dueDate}" title="Due date">
+          <input type="text" inputmode="decimal" id="edit-gravg-${book.id}" value="${book.goodreadsAvg || ''}" placeholder="Goodreads avg (e.g. 4.12)">
+        </div>
+        <div class="edit-check-row">
+          <label><input type="checkbox" id="edit-owned-${book.id}" ${book.owned ? 'checked' : ''}> I own this (no due date)</label>
         </div>
         <div class="edit-check-row">
           <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
@@ -6834,7 +6949,7 @@
         </div>
         <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
           ${menuReadingHtml}
-          ${renewUrgent ? '' : `<button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
+          ${(renewUrgent || book.owned) ? '' : `<button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
             ${atLimit ? 'Renewed ' + bookMax + '/' + bookMax : (book.renewable ? '↻ Renew' : 'Not renewable')}
           </button>`}
           <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
@@ -6858,7 +6973,9 @@
       const atLimit = book.renewCount >= bookMax;
 
       let stampHtml = '';
-      if(!book.renewable){
+      if(book.owned){
+        stampHtml = ''; // v58: no loan, nothing to renew
+      }else if(!book.renewable){
         stampHtml = `<div class="stamp final">Final loan — cannot renew</div>`;
       }else if(atLimit){
         stampHtml = `<div class="stamp final">Max renewals reached</div>`;
@@ -6881,7 +6998,8 @@
             <p class="card-title">${escapeHtml(book.title)}</p>
             <p class="card-author">${escapeHtml(book.author || 'Author unknown')}</p>
             ${dueBadgeHtml(book)}
-            <p class="meta-line">Borrowed ${fmtDate(book.borrowDate)}${book.source ? ' · from ' + escapeHtml(book.source) : ''}</p>
+            ${book.owned ? '' : `<p class="meta-line">Borrowed ${fmtDate(book.borrowDate)}${book.source ? ' · from ' + escapeHtml(book.source) : ''}</p>`}
+            ${hasCommunityRating(book) ? `<p class="wl-ol"><span class="star on" aria-hidden="true">★</span> ${olAvgHtml(book)}</p>` : ''}
             ${book.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(book.genre)}</span></div>` : ''}
             ${progressBarHtml(book, 'card')}
             ${book.currentlyReading ? `
@@ -7093,7 +7211,7 @@
     // Most borrowed library / source — across every book that's actually
     // been borrowed (i.e. not still sitting on the wishlist).
     const sourceCounts = {};
-    books.filter(b => !b.wishlist).forEach(b => {
+    books.filter(b => !b.wishlist && !b.owned).forEach(b => { // v58: owned books weren't borrowed
       const s = (b.source || '').trim();
       if(s) sourceCounts[s] = (sourceCounts[s] || 0) + 1;
     });
