@@ -117,6 +117,12 @@
      one "Add to wishlist" panel: search first, with a "Can't find it? Add
      it manually" link that reveals the old quick-add form (prefilled with
      the search text). All form ids unchanged. ---- */
+  /* ---- v53: UI review smaller points — sticky mini-header title now
+     prefixed "Up next:"; daily-goal line gets an explicit "✎ Edit" button
+     (the dashed number still works too) and reads "N pages a day"; Stats
+     headline swaps "Graphic novels in YYYY" for "Pages read in YYYY"
+     (summed from ReadingLog), with the yearly graphic-novel count kept as a
+     small "+ N graphic novels" line under "Books in YYYY" when non-zero. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -2210,6 +2216,7 @@
   }
   .stats-headline .stats-card .big-num{ font-size: 56px; color: var(--accent); }
   .stats-headline .stats-card .big-label{ font-size: 12.5px; color: var(--ink-soft); }
+  .stats-headline .stats-card .big-sublabel{ font-size: 11px; color: var(--muted); margin-top: 3px; }
   .stats-grid-small{ grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; margin-bottom: 8px; }
   .stats-grid-small .stats-card .big-num{ font-size: 26px; }
   .streak-row strong{ font-family: 'Fraunces', serif; font-size: 16px; }
@@ -2224,6 +2231,20 @@
     border-bottom: 1px dashed var(--accent);
     cursor: pointer;
   }
+  /* v53: explicit edit control next to the goal — the dashed number alone
+     wasn't an obvious tap target */
+  .goal-edit-btn{
+    margin-left: 6px;
+    background: none;
+    border: 1px solid #dcdcdc;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .goal-edit-btn:hover{ border-color: var(--accent); color: var(--accent); }
   .goal-track{
     height: 8px;
     background: var(--neutral-fill);
@@ -2399,6 +2420,13 @@
     text-overflow: ellipsis;
     flex-shrink: 1;
     min-width: 0;
+  }
+  .sticky-prefix{
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    color: var(--muted);
+    margin-right: 2px;
   }
   .sticky-counts{
     font-size: 11px;
@@ -4234,7 +4262,7 @@
           <div class="streak-hint">Months in a row with at least one finish</div>
         </div>`}
         <div class="goal-block">
-          <div class="goal-label">Read <span class="goal-num-edit" onclick="toggleGoalEdit()" title="Tap to change your daily goal">${dailyGoal}</span> pages</div>
+          <div class="goal-label">Read <span class="goal-num-edit" onclick="toggleGoalEdit()" title="Tap to change your daily goal">${dailyGoal}</span> pages a day <button type="button" class="goal-edit-btn" onclick="toggleGoalEdit()" aria-label="Change daily goal" title="Change daily goal">✎ Edit</button></div>
           <div class="goal-track"><div class="goal-fill" style="width:${pct}%"></div></div>
           <div class="goal-numbers">${todayPages} / ${dailyGoal}</div>
         </div>
@@ -5889,9 +5917,12 @@
     const stickyTitleEl = document.getElementById('sticky-title');
     const stickyCountsEl = document.getElementById('sticky-counts');
     if(stickyTitleEl){
-      stickyTitleEl.textContent = upcoming.length > 0
-        ? upcoming[0].title
-        : (activeBooks.length > 0 ? 'Everything queued is in progress' : '');
+      // v53: "Up next:" prefix so the bare title reads as what it is
+      if(upcoming.length > 0){
+        stickyTitleEl.innerHTML = `<span class="sticky-prefix">Up next:</span> ${escapeHtml(upcoming[0].title)}`;
+      }else{
+        stickyTitleEl.textContent = activeBooks.length > 0 ? 'Everything queued is in progress' : '';
+      }
     }
     if(stickyCountsEl){
       stickyCountsEl.textContent = activeBooks.length > 0
@@ -6501,6 +6532,11 @@
     const inCurrentYear = b => b.finishedDate && new Date(b.finishedDate).getFullYear() === currentYear;
     const finishedThisYear = finished.filter(inCurrentYear).length;
     const graphicThisYear = finishedGraphic.filter(inCurrentYear).length;
+    // v53: pages logged this year, from the ReadingLog table (v27). Only
+    // counts days where progress was logged in the app.
+    const pagesThisYear = readingLog
+      .filter(e => e.date && e.date.slice(0,4) === String(currentYear))
+      .reduce((sum, e) => sum + (e.pagesRead || 0), 0);
 
     // Reading streak: consecutive calendar months, counting back from the
     // current month, with at least one book finished in each. Breaks as
@@ -6528,8 +6564,8 @@
     renderStreakGoalCard(readingStreak);
     headlineEl.innerHTML = `
       <div class="stats-headline">
-        <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Books in ${currentYear}</div></div>
-        <div class="stats-card"><div class="big-num" id="stat-graphic-year">0</div><div class="big-label">Graphic novels in ${currentYear}</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-finished-year">0</div><div class="big-label">Books in ${currentYear}</div>${graphicThisYear > 0 ? `<div class="big-sublabel">+ ${graphicThisYear} graphic novel${graphicThisYear === 1 ? '' : 's'}</div>` : ''}</div>
+        <div class="stats-card"><div class="big-num" id="stat-pages-year">0</div><div class="big-label">Pages read in ${currentYear}</div></div>
       </div>
     `;
     gridEl.innerHTML = `
@@ -6555,7 +6591,7 @@
     animateStatNum('stat-avg-renewals', avgRenewals);
     animateStatNum('stat-avg-days', avgDays !== null ? avgDays : '—');
     animateStatNum('stat-finished-year', finishedThisYear);
-    animateStatNum('stat-graphic-year', graphicThisYear);
+    animateStatNum('stat-pages-year', pagesThisYear);
     animateStatNum('stat-graphic', finishedGraphic.length);
     animateStatNum('stat-dnf', books.filter(b => b.dnf).length);
 
