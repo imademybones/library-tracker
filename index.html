@@ -109,6 +109,14 @@
      Stack tab, compact header elsewhere; search hidden on Stats; the
      currently-reading strip at the top of Stack dropped (it duplicated the
      Now reading cards) — only its daily-goal line remains. ---- */
+  /* ---- v52: UI review fixes, part 3 (item 8) — Sort dropdown and
+     Compact toggle now sit on the "Rest of the stack" heading row (sort
+     icon instead of a floating SORT label, icon-only compact toggle with
+     aria-pressed), so they read as controls for that list. Wishlist's two
+     disclosures ("Search for a book" + "Add to to-read list") merged into
+     one "Add to wishlist" panel: search first, with a "Can't find it? Add
+     it manually" link that reveals the old quick-add form (prefilled with
+     the search text). All form ids unchanged. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -1354,6 +1362,61 @@
     max-width: 170px;
   }
   .stack-toolbar-controls .btn-compact-toggle{ white-space: nowrap; }
+  /* ---- v52: Sort + Compact sit on the "Rest of the stack" heading row
+     itself (heading left, controls right, one hairline under the whole
+     row) instead of a separate wrapping row with a floating SORT label ---- */
+  .stack-toolbar{
+    flex-wrap: nowrap;
+    margin: 32px 0 12px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+  }
+  .stack-toolbar .stack-label{
+    margin: 0;
+    padding: 0;
+    border: none;
+    white-space: nowrap;
+  }
+  .stack-toolbar-controls{ gap: 6px; }
+  .sort-select-wrap{ position: relative; gap: 0; }
+  .sort-icon{
+    position: absolute;
+    left: 8px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
+  .sort-select-wrap select{ padding: 5px 6px 5px 22px; max-width: 150px; }
+  .stack-toolbar-controls .btn-compact-toggle{
+    padding: 5px 7px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .btn-compact-toggle svg{
+    width: 16px; height: 16px;
+    fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round;
+  }
+  .visually-hidden{
+    position: absolute !important;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  /* ---- v52: manual-add fallback inside the "Add to wishlist" panel ---- */
+  .manual-add-link{
+    background: none;
+    border: none;
+    padding: 10px 0 2px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .manual-add-panel{ display: none; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .manual-add-panel.open{ display: block; }
   .sort-select-wrap select:focus{ outline: 2px solid var(--accent); outline-offset: 1px; }
 
   /* Stack rows — whitespace + a hairline divider, no card box. Urgency is
@@ -2562,8 +2625,8 @@
       <p class="stack-label flow-section-label" id="stack-label">Rest of the stack</p>
       <!-- v48: one Sort dropdown replaces the five sort buttons -->
       <div class="stack-toolbar-controls">
-        <label class="sort-select-wrap" for="sort-select">
-          <span>Sort</span>
+        <label class="sort-select-wrap" for="sort-select" title="Sort the rest of the stack">
+          <span class="sort-icon" aria-hidden="true">⇅</span><span class="visually-hidden">Sort</span>
           <select id="sort-select" onchange="setSortMode(this.value)">
             <option value="next">Read next</option>
             <option value="due">Due date</option>
@@ -2572,7 +2635,7 @@
             <option value="renewal">Can't renew first</option>
           </select>
         </label>
-        <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()">Compact view</button>
+        <button class="btn-compact-toggle" id="compact-toggle-btn" onclick="toggleCompactMode()" title="Compact view" aria-label="Compact view" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>
       </div>
     </div>
     <div id="book-list"></div>
@@ -2589,23 +2652,19 @@
          or into the "I've borrowed this" flow ---- -->
     <div class="disclosure" id="book-search-disclosure">
       <div class="disclosure-head" onclick="toggleDisclosure('book-search-disclosure')">
-        <h3>🔍 Search for a book</h3>
+        <h3>+ Add to wishlist</h3>
         <span class="disclosure-chevron">▾</span>
       </div>
       <div class="disclosure-body">
         <div class="search-box-row">
-          <input type="text" id="book-search-input" placeholder="Title or author" onkeydown="if(event.key==='Enter') runBookSearch()">
+          <input type="text" id="book-search-input" placeholder="Search by title or author" onkeydown="if(event.key==='Enter') runBookSearch()">
           <button onclick="runBookSearch()">Search</button>
         </div>
         <div id="book-search-results"></div>
-      </div>
-    </div>
-    <div class="disclosure" id="quick-add-disclosure">
-      <div class="disclosure-head" onclick="toggleDisclosure('quick-add-disclosure')">
-        <h3>+ Add to to-read list</h3>
-        <span class="disclosure-chevron">▾</span>
-      </div>
-      <div class="disclosure-body">
+        <!-- v52: the old separate "Add to to-read list" disclosure now lives
+             here as the manual fallback under the search results -->
+        <button type="button" class="manual-add-link" id="manual-add-link" onclick="toggleManualAdd()">Can't find it? Add it manually</button>
+        <div class="manual-add-panel" id="manual-add-panel">
         <div class="quick-add-row" style="margin-top:2px;">
           <input type="text" id="w-title" placeholder="Title">
           <input type="text" id="w-author" placeholder="Author">
@@ -2661,6 +2720,7 @@
               <option value="Classics">Classics</option>
             </select>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -2996,6 +3056,24 @@
     if(id === 'quick-add-disclosure' && el.classList.contains('open')){
       applySourceDefault('w-source');
     }
+  }
+
+  // ---- v52: manual add, now a fallback inside the "Add to wishlist"
+  // search panel. Opening it carries over whatever was typed in the search
+  // box as the title, and applies the last-used-library default (v31).
+  function toggleManualAdd(){
+    const panel = document.getElementById('manual-add-panel');
+    if(!panel) return;
+    const opening = !panel.classList.contains('open');
+    panel.classList.toggle('open', opening);
+    const link = document.getElementById('manual-add-link');
+    if(link) link.textContent = opening ? 'Hide manual entry' : "Can't find it? Add it manually";
+    if(!opening) return;
+    applySourceDefault('w-source');
+    const titleInput = document.getElementById('w-title');
+    const query = (document.getElementById('book-search-input') || {}).value || '';
+    if(titleInput && !titleInput.value.trim() && query.trim()) titleInput.value = query.trim();
+    if(titleInput) titleInput.focus();
   }
 
   // ---- v16: per-card overflow action menu ----
@@ -4465,7 +4543,7 @@
     const resultsEl = document.getElementById('book-search-results');
     if(!resultsEl) return;
     if(bookSearchResults.length === 0){
-      resultsEl.innerHTML = '<div class="search-empty">No matches — try a different title or author.</div>';
+      resultsEl.innerHTML = '<div class="search-empty">No matches — try a different title or author, or add it manually below.</div>';
       return;
     }
     resultsEl.innerHTML = bookSearchResults.map((r, i) => `
@@ -5689,7 +5767,10 @@
     const sortSelect = document.getElementById('sort-select');
     if(sortSelect) sortSelect.value = sortMode;
     const compactBtn = document.getElementById('compact-toggle-btn');
-    if(compactBtn) compactBtn.classList.toggle('active', compactMode);
+    if(compactBtn){
+      compactBtn.classList.toggle('active', compactMode);
+      compactBtn.setAttribute('aria-pressed', compactMode ? 'true' : 'false');
+    }
     const renewalsInput = document.getElementById('max-renewals-input');
     if(renewalsInput && document.activeElement !== renewalsInput) renewalsInput.value = maxRenewals;
 
