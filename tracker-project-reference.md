@@ -76,10 +76,16 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v55**.
+Current version: **v56**.
 
 ## Changelog
 
+- **v56** — Open Library lookup fix. v55's bulk lookup sent ~6
+  requests/second; Open Library throttles anonymous clients to roughly 1/s,
+  so every request failed and nothing was saved. Now paced at ~1.1s per
+  request, retries 429/5xx/network errors with 4s/8s/16s backoff, pauses
+  after 5 consecutive failures (re-run resumes), and shows live counts and
+  the actual error text.
 - **v55** — Open Library community ratings; Goodreads import fixes.
   - Goodreads' Export Library CSV no longer has an `Average Rating` column,
     and `My Rating` can now be fractional (quarter stars, e.g. `3.75`).
