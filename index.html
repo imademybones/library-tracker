@@ -132,6 +132,14 @@
      result, then fills in My Rating where the tracker has none (never
      overwriting) and refreshes Goodreads Avg, in batches of 10. Goodreads
      has no usable public API, so this is a manual import, not a sync. ---- */
+  /* ---- v55: Goodreads exports no longer include "Average Rating" and now
+     allow quarter stars. Import rounds My Rating to the nearest whole star
+     (was truncating). Community average now comes from Open Library: the
+     (always-empty) "Goodreads Avg" field is renamed "OL Avg" and a new "OL
+     Ratings Count" field caches the count (0 = looked up, none). Settings →
+     Community ratings bulk-looks-up finished books; finishing a book looks
+     it up in the background. History rows show "Open Library 3.9 · 12
+     ratings". ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -2925,12 +2933,19 @@
     <!-- v54: Goodreads ratings import -->
     <div class="settings-section">
       <p class="settings-section-label">Goodreads ratings</p>
-      <p class="settings-help">In Goodreads, go to My Books → Import and export → <strong>Export Library</strong>, then choose the downloaded .csv here. Your star ratings fill in any book you haven't rated in the tracker yet, plus the Goodreads average. The file stays on this device.</p>
+      <p class="settings-help">In Goodreads, go to My Books → Import and export → <strong>Export Library</strong>, then choose the downloaded .csv here. Your star ratings (rounded to whole stars) fill in any book you haven't rated in the tracker yet. The file stays on this device.</p>
       <label class="btn-export gr-file-btn">
         ↑ Choose Goodreads export (.csv)
         <input type="file" accept=".csv,text/csv" onchange="handleGoodreadsFile(this)" hidden>
       </label>
       <div id="goodreads-import-status"></div>
+    </div>
+    <!-- v55: Open Library community averages -->
+    <div class="settings-section">
+      <p class="settings-section-label">Community ratings</p>
+      <p class="settings-help">Looks up each finished book's average rating on Open Library and shows it next to your stars in History. New books are looked up automatically when you finish them. Open Library has fewer ratings than Goodreads, so some books won't have one.</p>
+      <button class="btn-export" onclick="runOlLookup()">Look up Open Library ratings</button>
+      <div id="ol-lookup-status"></div>
     </div>
     <div class="settings-section">
       <p class="settings-section-label">Backup</p>
@@ -4019,7 +4034,10 @@
       genre: f['Genre'] || '',
       // v54: ratings
       myRating: f['My Rating'] || 0,
-      goodreadsAvg: f['Goodreads Avg'] || null
+      // v55: Open Library community rating, cached in Airtable. olCount is
+      // null until looked up; 0 means "looked up, no ratings on Open Library".
+      olAvg: f['OL Avg'] || null,
+      olCount: (typeof f['OL Ratings Count'] === 'number') ? f['OL Ratings Count'] : null
     };
   }
 
@@ -5157,6 +5175,7 @@
     openFinishIds.delete(id);
     render();
     showToast('Marked finished.', 'Undo', () => unfinishBook(id));
+    backgroundOlLookup(id); // v55: fire-and-forget
     if(!checkMilestone(book)) triggerConfetti();
   }
 
@@ -5385,8 +5404,8 @@
   // ---- v54: ratings ----------------------------------------------------
   // "My Rating" (1–5) is set from the Finished step, by tapping the stars on
   // a History row, or in bulk from a Goodreads library-export CSV (Settings).
-  // "Goodreads Avg" is only ever written by that import — it's a snapshot,
-  // not a live lookup (Goodreads has no usable public API any more).
+  // v55: the community average comes from Open Library ("OL Avg" / "OL
+  // Ratings Count"), looked up once per book and cached in Airtable.
   const pendingFinishRatings = new Map(); // bookId -> stars chosen in the open Finish box
 
   function starsHtml(value, opts = {}){
@@ -5440,9 +5459,10 @@
   // with (among others) Title, Author, My Rating, Average Rating, Exclusive
   // Shelf. We match rows to tracker books by normalised title + author
   // surname, then fill in My Rating (only where the tracker has none — a
-  // rating set here is never overwritten) and Goodreads Avg (always
-  // refreshed). The file never leaves the browser; only the matched
-  // ratings are PATCHed to Airtable.
+  // rating set here is never overwritten). The file never leaves the
+  // browser; only the matched ratings are PATCHed to Airtable.
+  // v55: Goodreads exports no longer include "Average Rating", so the
+  // community average now comes from Open Library instead (see below).
   let goodreadsImportPlan = null;
 
   function parseCsv(text){
@@ -5506,14 +5526,15 @@
     if(rows.length < 2) throw new Error('empty CSV');
     const head = rows[0].map(h => h.trim());
     const col = name => head.indexOf(name);
-    const iTitle = col('Title'), iAuthor = col('Author'), iMine = col('My Rating'), iAvg = col('Average Rating'), iShelf = col('Exclusive Shelf');
+    const iTitle = col('Title'), iAuthor = col('Author'), iMine = col('My Rating'), iShelf = col('Exclusive Shelf');
     if(iTitle < 0 || iAuthor < 0 || iMine < 0) throw new Error('not a Goodreads export');
 
     const gr = rows.slice(1).map(r => ({
       title: r[iTitle] || '',
       author: r[iAuthor] || '',
-      mine: parseInt(r[iMine], 10) || 0,
-      avg: iAvg >= 0 ? (parseFloat(r[iAvg]) || null) : null,
+      // v55: Goodreads now allows quarter stars ("3.75") — round to the
+      // nearest whole star (My Rating is a 1–5 whole-star field)
+      mine: Math.max(0, Math.min(5, Math.round(parseFloat(r[iMine]) || 0))),
       shelf: iShelf >= 0 ? (r[iShelf] || '') : ''
     })).filter(g => g.title);
 
@@ -5546,7 +5567,6 @@
         if(!b.myRating) fields['My Rating'] = g.mine;
         else if(b.myRating !== g.mine) keptExisting++;
       }
-      if(g.avg && g.avg !== b.goodreadsAvg) fields['Goodreads Avg'] = g.avg;
       if(Object.keys(fields).length) updates.push({ id: b.id, fields });
     });
     const unmatchedRead = gr.filter(g => g.shelf === 'read' && !matchedGr.has(g));
@@ -5555,8 +5575,7 @@
       totalRows: gr.length,
       matched,
       updates,
-      ratingsToAdd: updates.filter(u => u.fields['My Rating']).length,
-      avgsToSet: updates.filter(u => u.fields['Goodreads Avg']).length,
+      ratingsToAdd: updates.length,
       keptExisting,
       unmatchedRead
     };
@@ -5582,7 +5601,6 @@
       <p class="gr-msg">Matched <strong>${plan.matched}</strong> of your tracker books to ${plan.totalRows} Goodreads entries.</p>
       <ul class="gr-summary">
         <li>${plan.ratingsToAdd} rating${plan.ratingsToAdd === 1 ? '' : 's'} to add</li>
-        <li>${plan.avgsToSet} Goodreads average${plan.avgsToSet === 1 ? '' : 's'} to fill in</li>
         ${plan.keptExisting ? `<li>${plan.keptExisting} book${plan.keptExisting === 1 ? '' : 's'} already rated here — kept your tracker rating</li>` : ''}
       </ul>
       ${plan.unmatchedRead.length ? `
@@ -5617,7 +5635,6 @@
         const b = books.find(x => x.id === u.id);
         if(!b) return;
         if(u.fields['My Rating']) b.myRating = u.fields['My Rating'];
-        if(u.fields['Goodreads Avg']) b.goodreadsAvg = u.fields['Goodreads Avg'];
       });
       done += chunk.length;
     }
@@ -5626,6 +5643,92 @@
     if(el) el.innerHTML = `<p class="gr-msg">Done — updated ${done} book${done === 1 ? '' : 's'}.</p>`;
     render();
     showToast(`Imported Goodreads ratings for ${done} book${done === 1 ? '' : 's'}.`);
+  }
+
+  // ---- v55: Open Library community ratings ----
+  // Same free, keyless search API the app already uses for covers. Results
+  // are cached in Airtable (OL Avg + OL Ratings Count) so each book is only
+  // looked up once. A result only counts if its title matches the book's
+  // (ignoring subtitle/series), so we don't attach some other book's rating.
+  async function lookupOlRating(book){
+    const params = new URLSearchParams({
+      title: book.title || '', limit: '5',
+      fields: 'title,author_name,ratings_average,ratings_count'
+    });
+    if(book.author) params.set('author', book.author);
+    const res = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+    if(!res.ok) throw new Error('Open Library ' + res.status);
+    const data = await res.json();
+    const want = shortTitle(book.title);
+    const doc = (data.docs || []).find(d => shortTitle(d.title) === want);
+    const count = doc && doc.ratings_count ? doc.ratings_count : 0;
+    const avg = count && doc.ratings_average ? Math.round(doc.ratings_average * 100) / 100 : null;
+    return { avg, count };
+  }
+
+  function olFields(r){
+    return { 'OL Avg': r.avg, 'OL Ratings Count': r.count };
+  }
+
+  // Best-effort single lookup, e.g. right after finishing a book. Silent on
+  // failure — the bulk button in Settings will pick it up later.
+  async function backgroundOlLookup(id){
+    const book = books.find(b => b.id === id);
+    if(!book || isTempId(id) || book.olCount !== null) return;
+    try{
+      const r = await lookupOlRating(book);
+      await airtableRequest(API_URL, { method: 'PATCH', body: JSON.stringify({ records: [{ id, fields: olFields(r) }] }) });
+      book.olAvg = r.avg;
+      book.olCount = r.count;
+      render();
+    }catch(e){
+      console.warn('Open Library rating lookup failed:', e);
+    }
+  }
+
+  let olLookupRunning = false;
+  async function runOlLookup(){
+    if(olLookupRunning) return;
+    const el = document.getElementById('ol-lookup-status');
+    const todo = books.filter(b => b.finished && !isTempId(b.id) && b.olCount === null);
+    if(todo.length === 0){
+      if(el) el.innerHTML = '<p class="gr-msg">Every finished book has already been looked up.</p>';
+      return;
+    }
+    olLookupRunning = true;
+    let found = 0, none = 0, failed = 0, saved = 0;
+    let pending = [];
+    const flush = async () => {
+      if(!pending.length) return;
+      const chunk = pending; pending = [];
+      await airtableRequest(API_URL, { method: 'PATCH', body: JSON.stringify({ records: chunk.map(c => ({ id: c.book.id, fields: olFields(c.r) })) }) });
+      chunk.forEach(c => { c.book.olAvg = c.r.avg; c.book.olCount = c.r.count; });
+      saved += chunk.length;
+    };
+    try{
+      for(let i = 0; i < todo.length; i++){
+        if(el) el.innerHTML = `<p class="gr-msg">Looking up ${i + 1} of ${todo.length}…</p>`;
+        try{
+          const r = await lookupOlRating(todo[i]);
+          if(r.count) found++; else none++;
+          pending.push({ book: todo[i], r });
+        }catch(e){
+          failed++; // leave olCount null so a re-run retries it
+        }
+        if(pending.length >= 10) await flush(); // Airtable: max 10 records per request
+        await new Promise(res => setTimeout(res, 150)); // be gentle with Open Library
+      }
+      await flush();
+    }catch(e){
+      console.error('Saving Open Library ratings failed:', e);
+      if(el) el.innerHTML = `<p class="gr-msg gr-error">Stopped after saving ${saved} — couldn't reach Airtable. Run it again to continue.</p>`;
+      olLookupRunning = false;
+      render();
+      return;
+    }
+    olLookupRunning = false;
+    if(el) el.innerHTML = `<p class="gr-msg">Done — ${found} book${found === 1 ? '' : 's'} with an Open Library rating, ${none} with none yet${failed ? `, ${failed} couldn't be reached (run again to retry)` : ''}.</p>`;
+    render();
   }
 
   function toggleHistoryEdit(id){
@@ -6321,7 +6424,7 @@
               <div>
                 <p class="hr-title">${escapeHtml(b.title)}</p>
                 <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · finished ${fmtDate(b.finishedDate)}</p>
-                <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${b.goodreadsAvg ? `<span class="gr-avg" title="Goodreads average at last import">Goodreads ${Number(b.goodreadsAvg).toFixed(2)}</span>` : ''}</p>
+                <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${b.olCount ? `<span class="gr-avg" title="Open Library community average">Open Library ${Number(b.olAvg).toFixed(1)} · ${b.olCount} rating${b.olCount === 1 ? '' : 's'}</span>` : ''}</p>
                 ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
               </div>
               <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>

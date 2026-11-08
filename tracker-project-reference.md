@@ -27,9 +27,11 @@ Horror, Romance, Historical Fiction, Non-Fiction, Biography/Memoir,
 Self-Help, History, Young Adult, Graphic Novel, Poetry, Classics).
 My Rating `fldFmMKmyWnCqRSiw` (rating, 1–5 stars, added v54 — your own
 rating; set from the Finish box, History rows, or the Goodreads CSV import;
-empty = unrated), Goodreads Avg `fldfparMTrpDJgTAq` (number, 2 decimals,
-added v54 — Goodreads community average as of the last CSV import; a
-snapshot, never fetched live).
+empty = unrated), OL Avg `fldfparMTrpDJgTAq` (number, 2 decimals — added
+v54 as "Goodreads Avg", renamed v55; Open Library community average, cached
+by the app), OL Ratings Count `fldqv3IGgnVKmQHws` (number, added v55 — count
+behind OL Avg; 0 = looked up and Open Library has no ratings, empty = not
+looked up yet).
 
 There is also an undocumented leftover field, `"Field 20"`
 (`fldkYhTNjaq9d63Zk`, singleLineText, sits between Wishlist Order and
@@ -74,10 +76,22 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v54**.
+Current version: **v55**.
 
 ## Changelog
 
+- **v55** — Open Library community ratings; Goodreads import fixes.
+  - Goodreads' Export Library CSV no longer has an `Average Rating` column,
+    and `My Rating` can now be fractional (quarter stars, e.g. `3.75`).
+    The import now rounds to the nearest whole star (v54 truncated — four
+    records were corrected by hand in Airtable: Scion, Inanna, The
+    Employees, So Thirsty → 4) and no longer looks for an average.
+  - `Goodreads Avg` (never populated) renamed `OL Avg`; new `OL Ratings
+    Count` field. Settings → Community ratings looks up every finished book
+    not yet looked up via Open Library search (`ratings_average`,
+    `ratings_count`), accepting only a result whose title matches; saves in
+    batches of 10. Finishing a book triggers a silent background lookup.
+    History rows show "Open Library 3.7 · 12 ratings".
 - **v54** — Ratings + Goodreads import.
   - New Books fields `My Rating` (rating, 1–5) and `Goodreads Avg` (number).
   - Star picker in the Finish box (optional — saved with the finish
