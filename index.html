@@ -123,6 +123,15 @@
      headline swaps "Graphic novels in YYYY" for "Pages read in YYYY"
      (summed from ReadingLog), with the yearly graphic-novel count kept as a
      small "+ N graphic novels" line under "Books in YYYY" when non-zero. ---- */
+  /* ---- v54: ratings — new Airtable fields "My Rating" (1–5 rating) and
+     "Goodreads Avg" (number). Star picker in the Finish box; tap-to-rate
+     stars (and the Goodreads average, when known) on History rows; "Avg
+     rating" on the Stats tab; and Settings → Goodreads ratings, which
+     reads a Goodreads "Export Library" CSV in the browser, matches it to
+     tracker books by normalised title + author surname, previews the
+     result, then fills in My Rating where the tracker has none (never
+     overwriting) and refreshes Goodreads Avg, in batches of 10. Goodreads
+     has no usable public API, so this is a manual import, not a sync. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -694,6 +703,29 @@
     margin: 0 0 2px;
   }
   .history-row .hr-meta{ font-size: 11.5px; color: var(--ink-soft); margin: 0; }
+  /* ---- v54: star ratings ---- */
+  .stars{ display: inline-flex; gap: 1px; vertical-align: middle; }
+  .stars .star{ font-size: 15px; line-height: 1; color: #d9dadc; }
+  .stars .star.on{ color: #d9a400; }
+  .stars-pick .star{
+    background: none; border: none; padding: 2px 1px; cursor: pointer;
+    font-family: inherit;
+  }
+  .stars-pick .star:hover{ color: #e8bb2e; }
+  .hr-rating{ margin: 4px 0 0; display: flex; align-items: center; gap: 8px; }
+  .gr-avg{ font-size: 10.5px; color: var(--muted); }
+  .finish-rating{ display: inline-flex; align-items: center; }
+  .finish-rating .star{ font-size: 18px; }
+  .settings-help{ font-size: 12px; color: var(--ink-soft); line-height: 1.45; margin: 0 0 10px; }
+  .gr-file-btn{ display: inline-block; cursor: pointer; }
+  .gr-msg{ font-size: 12.5px; color: var(--ink); margin: 12px 0 6px; }
+  .gr-error{ color: var(--red); }
+  .gr-dim{ color: var(--muted); }
+  .gr-summary{ font-size: 12.5px; color: var(--ink-soft); margin: 0 0 8px; padding-left: 18px; }
+  .gr-unmatched{ font-size: 12px; color: var(--ink-soft); margin: 4px 0 10px; }
+  .gr-unmatched summary{ cursor: pointer; }
+  .gr-unmatched ul{ padding-left: 18px; margin: 6px 0 0; }
+  .gr-apply{ margin-top: 6px; }
   .history-row .hr-badge{
     font-size: 9.5px;
     letter-spacing: 0.5px;
@@ -2890,6 +2922,16 @@
         <input type="number" id="max-renewals-input" min="0" max="20" value="3" onchange="setMaxRenewals(this.value)">
       </div>
     </div>
+    <!-- v54: Goodreads ratings import -->
+    <div class="settings-section">
+      <p class="settings-section-label">Goodreads ratings</p>
+      <p class="settings-help">In Goodreads, go to My Books → Import and export → <strong>Export Library</strong>, then choose the downloaded .csv here. Your star ratings fill in any book you haven't rated in the tracker yet, plus the Goodreads average. The file stays on this device.</p>
+      <label class="btn-export gr-file-btn">
+        ↑ Choose Goodreads export (.csv)
+        <input type="file" accept=".csv,text/csv" onchange="handleGoodreadsFile(this)" hidden>
+      </label>
+      <div id="goodreads-import-status"></div>
+    </div>
     <div class="settings-section">
       <p class="settings-section-label">Backup</p>
       <button class="btn-export" onclick="exportBackup()" title="Download a backup JSON file">↓ Export backup</button>
@@ -3974,7 +4016,10 @@
       dnf: !!f['DNF'],
       dnfDate: f['DNF Date'] || '',
       dnfReason: f['DNF Reason'] || '',
-      genre: f['Genre'] || ''
+      genre: f['Genre'] || '',
+      // v54: ratings
+      myRating: f['My Rating'] || 0,
+      goodreadsAvg: f['Goodreads Avg'] || null
     };
   }
 
@@ -5064,6 +5109,10 @@
     }
     const book = books.find(b => b.id === id);
     const fields = { 'Finished': true, 'Finished Date': finishedDate, 'Currently Reading': false };
+    // v54: optional star rating picked in the Finish box
+    const pickedRating = pendingFinishRatings.get(id) || 0;
+    if(pickedRating){ fields['My Rating'] = pickedRating; book.myRating = pickedRating; }
+    pendingFinishRatings.delete(id);
 
     if(isTempId(id)){
       enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Mark finished — ${book.title}` });
@@ -5333,6 +5382,252 @@
   // PATCH instead of three separate Save buttons. Same isTempId /
   // network-failure pattern as the other inline edits. ----
   const openHistoryEditIds = new Set();
+  // ---- v54: ratings ----------------------------------------------------
+  // "My Rating" (1–5) is set from the Finished step, by tapping the stars on
+  // a History row, or in bulk from a Goodreads library-export CSV (Settings).
+  // "Goodreads Avg" is only ever written by that import — it's a snapshot,
+  // not a live lookup (Goodreads has no usable public API any more).
+  const pendingFinishRatings = new Map(); // bookId -> stars chosen in the open Finish box
+
+  function starsHtml(value, opts = {}){
+    // opts.onPick: JS expression prefix; each star calls `${onPick}(n)`.
+    const v = Math.round(value || 0);
+    let out = '';
+    for(let n = 1; n <= 5; n++){
+      const on = n <= v;
+      out += opts.onPick
+        ? `<button type="button" class="star ${on ? 'on' : ''}" onclick="event.stopPropagation(); ${opts.onPick}(${n})" aria-label="${n} star${n === 1 ? '' : 's'}" title="${n} star${n === 1 ? '' : 's'}">★</button>`
+        : `<span class="star ${on ? 'on' : ''}" aria-hidden="true">★</span>`;
+    }
+    const label = opts.onPick ? '' : ` aria-label="${v} out of 5 stars"`;
+    return `<span class="stars ${opts.onPick ? 'stars-pick' : ''}"${opts.onPick ? ' role="group" aria-label="Your rating"' : label}>${out}</span>`;
+  }
+
+  // Finish box picker — kept in a Map so a re-render doesn't lose it.
+  function pickFinishRating(id, n){
+    const cur = pendingFinishRatings.get(id) || 0;
+    if(cur === n) pendingFinishRatings.delete(id); else pendingFinishRatings.set(id, n);
+    const wrap = document.getElementById('finish-rating-' + id);
+    if(wrap) wrap.innerHTML = starsHtml(pendingFinishRatings.get(id) || 0, { onPick: `pickFinishRating.bind(null, '${id}')` });
+  }
+
+  // Tap-to-rate on a History row. Tapping the current rating clears it.
+  async function rateBook(id, n){
+    const book = books.find(b => b.id === id);
+    if(!book) return;
+    const prev = book.myRating || 0;
+    const next = prev === n ? 0 : n;
+    const fields = { 'My Rating': next || null };
+    book.myRating = next;
+    render();
+    const queue = () => enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Rating — ${book.title}` });
+    if(isTempId(id)){ queue(); showToast("Saved — will sync once you're back online."); return; }
+    try{
+      await airtableRequest(API_URL, { method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }) });
+    }catch(e){
+      if(e.isNetworkFailure){ queue(); showToast("Saved — will sync once you're back online."); return; }
+      console.error('Save rating failed:', e);
+      book.myRating = prev;
+      render();
+      showToast('Could not save that rating — check your connection and try again.');
+      return;
+    }
+    showToast(next ? `Rated ${next} star${next === 1 ? '' : 's'}.` : 'Rating cleared.');
+  }
+
+  // ---- v54: Goodreads library-export import ----
+  // Goodreads → My Books → Import and export → Export Library gives a CSV
+  // with (among others) Title, Author, My Rating, Average Rating, Exclusive
+  // Shelf. We match rows to tracker books by normalised title + author
+  // surname, then fill in My Rating (only where the tracker has none — a
+  // rating set here is never overwritten) and Goodreads Avg (always
+  // refreshed). The file never leaves the browser; only the matched
+  // ratings are PATCHed to Airtable.
+  let goodreadsImportPlan = null;
+
+  function parseCsv(text){
+    const rows = [];
+    let row = [], field = '', inQuotes = false;
+    for(let i = 0; i < text.length; i++){
+      const c = text[i];
+      if(inQuotes){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else inQuotes = false;
+        }else field += c;
+      }else if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field = '';
+        if(row.length > 1 || row[0] !== '') rows.push(row);
+        row = [];
+      }else field += c;
+    }
+    if(field !== '' || row.length){ row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function normTitle(t){
+    return (t || '')
+      .toLowerCase()
+      .replace(/\s*\([^)]*#[^)]*\)\s*$/, '')   // "(Series, #2)" suffix
+      .replace(/[\u2018\u2019']/g, '')
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\bvolume\b/g, 'vol')     // "Vol 1" == "Volume 1"
+      .replace(/^(the|a|an) /, '')
+      .trim();
+  }
+  function shortTitle(t){
+    // title before any subtitle
+    return normTitle((t || '').split(/[:\u2014]/)[0]);
+  }
+  function authorKey(a){
+    const parts = (a || '').toLowerCase().replace(/[^a-z\s'-]/g, ' ').trim().split(/\s+/);
+    return parts.length ? parts[parts.length - 1] : '';
+  }
+
+  function handleGoodreadsFile(input){
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{ planGoodreadsImport(String(reader.result || '')); }
+      catch(e){ console.error('Goodreads import parse failed:', e); renderGoodreadsImport('error'); }
+      input.value = '';
+    };
+    reader.onerror = () => { renderGoodreadsImport('error'); input.value = ''; };
+    reader.readAsText(file);
+  }
+
+  function planGoodreadsImport(text){
+    const rows = parseCsv(text);
+    if(rows.length < 2) throw new Error('empty CSV');
+    const head = rows[0].map(h => h.trim());
+    const col = name => head.indexOf(name);
+    const iTitle = col('Title'), iAuthor = col('Author'), iMine = col('My Rating'), iAvg = col('Average Rating'), iShelf = col('Exclusive Shelf');
+    if(iTitle < 0 || iAuthor < 0 || iMine < 0) throw new Error('not a Goodreads export');
+
+    const gr = rows.slice(1).map(r => ({
+      title: r[iTitle] || '',
+      author: r[iAuthor] || '',
+      mine: parseInt(r[iMine], 10) || 0,
+      avg: iAvg >= 0 ? (parseFloat(r[iAvg]) || null) : null,
+      shelf: iShelf >= 0 ? (r[iShelf] || '') : ''
+    })).filter(g => g.title);
+
+    const byFull = new Map(), byShort = new Map();
+    gr.forEach(g => {
+      const k1 = normTitle(g.title), k2 = shortTitle(g.title);
+      if(!byFull.has(k1)) byFull.set(k1, []);
+      byFull.get(k1).push(g);
+      if(!byShort.has(k2)) byShort.set(k2, []);
+      byShort.get(k2).push(g);
+    });
+    const pick = (cands, book) => {
+      if(!cands) return null;
+      const ak = authorKey(book.author);
+      if(!ak) return cands.length === 1 ? cands[0] : null;
+      return cands.find(g => authorKey(g.author) === ak) || null;
+    };
+
+    const matchedGr = new Set();
+    const updates = [];
+    let keptExisting = 0, matched = 0;
+    books.forEach(b => {
+      if(isTempId(b.id)) return;
+      const g = pick(byFull.get(normTitle(b.title)), b) || pick(byShort.get(shortTitle(b.title)), b);
+      if(!g) return;
+      matched++;
+      matchedGr.add(g);
+      const fields = {};
+      if(g.mine > 0){
+        if(!b.myRating) fields['My Rating'] = g.mine;
+        else if(b.myRating !== g.mine) keptExisting++;
+      }
+      if(g.avg && g.avg !== b.goodreadsAvg) fields['Goodreads Avg'] = g.avg;
+      if(Object.keys(fields).length) updates.push({ id: b.id, fields });
+    });
+    const unmatchedRead = gr.filter(g => g.shelf === 'read' && !matchedGr.has(g));
+
+    goodreadsImportPlan = {
+      totalRows: gr.length,
+      matched,
+      updates,
+      ratingsToAdd: updates.filter(u => u.fields['My Rating']).length,
+      avgsToSet: updates.filter(u => u.fields['Goodreads Avg']).length,
+      keptExisting,
+      unmatchedRead
+    };
+    renderGoodreadsImport('preview');
+  }
+
+  function renderGoodreadsImport(state){
+    const el = document.getElementById('goodreads-import-status');
+    if(!el) return;
+    const plan = goodreadsImportPlan;
+    if(state === 'error'){
+      el.innerHTML = `<p class="gr-msg gr-error">That doesn't look like a Goodreads library export. In Goodreads go to My Books → Import and export → Export Library, then choose the downloaded .csv file.</p>`;
+      return;
+    }
+    if(state === 'working'){
+      el.innerHTML = `<p class="gr-msg">Saving ratings…</p>`;
+      return;
+    }
+    if(!plan){ el.innerHTML = ''; return; }
+    const unmatchedList = plan.unmatchedRead.slice(0, 8).map(g => `<li>${escapeHtml(g.title)} <span class="gr-dim">— ${escapeHtml(g.author)}</span></li>`).join('');
+    const more = plan.unmatchedRead.length > 8 ? `<li class="gr-dim">…and ${plan.unmatchedRead.length - 8} more</li>` : '';
+    el.innerHTML = `
+      <p class="gr-msg">Matched <strong>${plan.matched}</strong> of your tracker books to ${plan.totalRows} Goodreads entries.</p>
+      <ul class="gr-summary">
+        <li>${plan.ratingsToAdd} rating${plan.ratingsToAdd === 1 ? '' : 's'} to add</li>
+        <li>${plan.avgsToSet} Goodreads average${plan.avgsToSet === 1 ? '' : 's'} to fill in</li>
+        ${plan.keptExisting ? `<li>${plan.keptExisting} book${plan.keptExisting === 1 ? '' : 's'} already rated here — kept your tracker rating</li>` : ''}
+      </ul>
+      ${plan.unmatchedRead.length ? `
+        <details class="gr-unmatched">
+          <summary>${plan.unmatchedRead.length} book${plan.unmatchedRead.length === 1 ? '' : 's'} on your Goodreads "read" shelf aren't in the tracker</summary>
+          <ul>${unmatchedList}${more}</ul>
+        </details>` : ''}
+      ${plan.updates.length
+        ? `<button class="btn-primary gr-apply" onclick="applyGoodreadsImport()">Apply ${plan.updates.length} update${plan.updates.length === 1 ? '' : 's'}</button>`
+        : `<p class="gr-msg gr-dim">Nothing new to update.</p>`}
+    `;
+  }
+
+  async function applyGoodreadsImport(){
+    const plan = goodreadsImportPlan;
+    if(!plan || !plan.updates.length) return;
+    renderGoodreadsImport('working');
+    let done = 0;
+    for(let i = 0; i < plan.updates.length; i += 10){
+      const chunk = plan.updates.slice(i, i + 10); // Airtable: max 10 records per request
+      try{
+        await airtableRequest(API_URL, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
+      }catch(e){
+        console.error('Goodreads import batch failed:', e);
+        goodreadsImportPlan = null;
+        renderGoodreadsImport();
+        showToast(`Import stopped after ${done} update${done === 1 ? '' : 's'} — check your connection and run it again (it skips anything already done).`);
+        render();
+        return;
+      }
+      chunk.forEach(u => {
+        const b = books.find(x => x.id === u.id);
+        if(!b) return;
+        if(u.fields['My Rating']) b.myRating = u.fields['My Rating'];
+        if(u.fields['Goodreads Avg']) b.goodreadsAvg = u.fields['Goodreads Avg'];
+      });
+      done += chunk.length;
+    }
+    goodreadsImportPlan = null;
+    const el = document.getElementById('goodreads-import-status');
+    if(el) el.innerHTML = `<p class="gr-msg">Done — updated ${done} book${done === 1 ? '' : 's'}.</p>`;
+    render();
+    showToast(`Imported Goodreads ratings for ${done} book${done === 1 ? '' : 's'}.`);
+  }
+
   function toggleHistoryEdit(id){
     if(openHistoryEditIds.has(id)) openHistoryEditIds.delete(id);
     else openHistoryEditIds.add(id);
@@ -6026,6 +6321,7 @@
               <div>
                 <p class="hr-title">${escapeHtml(b.title)}</p>
                 <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · finished ${fmtDate(b.finishedDate)}</p>
+                <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${b.goodreadsAvg ? `<span class="gr-avg" title="Goodreads average at last import">Goodreads ${Number(b.goodreadsAvg).toFixed(2)}</span>` : ''}</p>
                 ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
               </div>
               <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
@@ -6341,6 +6637,7 @@
 
       <div class="finish-inline ${openFinishIds.has(book.id) ? 'open' : ''}" id="finish-box-${book.id}">
         <input type="date" id="finish-date-${book.id}" value="${today}" max="${today}">
+        <span class="finish-rating" id="finish-rating-${book.id}">${starsHtml(pendingFinishRatings.get(book.id) || book.myRating || 0, { onPick: `pickFinishRating.bind(null, '${book.id}')` })}</span>
         <button onclick="confirmFinish('${book.id}')">Confirm finished</button>
       </div>
 
@@ -6519,6 +6816,9 @@
 
     const totalRenewals = books.reduce((s, b) => s + (b.renewCount || 0), 0);
     const avgRenewals = books.length ? (totalRenewals / books.length).toFixed(1) : '0';
+    // v54: average of your own star ratings across finished books
+    const ratedFinished = books.filter(b => b.finished && b.myRating > 0);
+    const avgRating = ratedFinished.length ? (ratedFinished.reduce((s, b) => s + b.myRating, 0) / ratedFinished.length).toFixed(1) : '—';
 
     // Average days from borrow to finish, for finished books with both dates.
     const durations = finishedAll
@@ -6582,6 +6882,7 @@
         <div class="stats-card"><div class="big-num" id="stat-graphic">0</div><div class="big-label">Graphic novels read</div></div>
         <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
         <div class="stats-card"><div class="big-num" id="stat-avg-renewals">0</div><div class="big-label">Avg renewals/book</div></div>
+        <div class="stats-card"><div class="big-num" id="stat-avg-rating">—</div><div class="big-label">Avg rating (${ratedFinished.length} rated)</div></div>
       </div>
     `;
     animateStatNum('stat-finished', finished.length);
@@ -6589,6 +6890,7 @@
     animateStatNum('stat-in-stack', activeNotReading.length + reading.length);
     animateStatNum('stat-wishlist', wishlist.length);
     animateStatNum('stat-avg-renewals', avgRenewals);
+    animateStatNum('stat-avg-rating', avgRating);
     animateStatNum('stat-avg-days', avgDays !== null ? avgDays : '—');
     animateStatNum('stat-finished-year', finishedThisYear);
     animateStatNum('stat-pages-year', pagesThisYear);

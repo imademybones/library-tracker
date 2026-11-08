@@ -25,6 +25,11 @@ optional, added v39), Genre `fldupfSUCDXZJ0ZIu` (singleSelect, added v40 —
 fixed taxonomy of 15 choices: Fiction, Fantasy, Sci-Fi, Mystery/Thriller,
 Horror, Romance, Historical Fiction, Non-Fiction, Biography/Memoir,
 Self-Help, History, Young Adult, Graphic Novel, Poetry, Classics).
+My Rating `fldFmMKmyWnCqRSiw` (rating, 1–5 stars, added v54 — your own
+rating; set from the Finish box, History rows, or the Goodreads CSV import;
+empty = unrated), Goodreads Avg `fldfparMTrpDJgTAq` (number, 2 decimals,
+added v54 — Goodreads community average as of the last CSV import; a
+snapshot, never fetched live).
 
 There is also an undocumented leftover field, `"Field 20"`
 (`fldkYhTNjaq9d63Zk`, singleLineText, sits between Wishlist Order and
@@ -69,10 +74,26 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v41**.
+Current version: **v54**.
 
 ## Changelog
 
+- **v54** — Ratings + Goodreads import.
+  - New Books fields `My Rating` (rating, 1–5) and `Goodreads Avg` (number).
+  - Star picker in the Finish box (optional — saved with the finish
+    PATCH); tap-to-rate stars on Reading History rows (tap the current
+    rating to clear it), with the Goodreads average shown alongside when
+    known; "Avg rating" card on the Stats tab.
+  - Settings → Goodreads ratings: choose a Goodreads "Export Library" CSV.
+    Parsed entirely in the browser; rows are matched to tracker books by
+    normalised title (series suffix, subtitle, leading article,
+    punctuation and "Volume"/"Vol" ignored) plus author surname. A preview
+    shows matches, ratings to add, and Goodreads "read" books not in the
+    tracker; Apply PATCHes in batches of 10. Never overwrites an existing
+    tracker rating; Goodreads Avg is always refreshed. Safe to re-run.
+  - Goodreads stopped issuing API keys in 2020, so there is no live sync.
+  - No Worker changes — rides the existing bare `WORKER_URL` → `Books`
+    route.
 - **v41** — Genre in Stats + editable on finished books.
   - Reading History rows (finished books) now show a genre chip and an
     inline "Genre" select + Save button, patterned on the existing
