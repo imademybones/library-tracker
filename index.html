@@ -99,6 +99,16 @@
      (7) Bottom nav stays over the 760px content column on desktop, the
      wishlist badge is anchored to its icon, and the emoji icons are
      replaced with matching SVG line icons. ---- */
+  /* ---- v51: UI review fixes, part 2 — (3) due date stated once per
+     card: "Due in 2 days · 10 Nov" on one line (full date on hover), the
+     hero relies on its ticket stamp, and the progress line no longer
+     repeats "N days left". (4) "Renewable" stamp + "renewals used" dot row
+     merged into one plain line ("Renewable · 0 of 2 renewals used"); the
+     red stamp is kept only for final-loan / max-renewals warnings.
+     (5) Title block (eyebrow, big h1, finished counter) shown only on the
+     Stack tab, compact header elsewhere; search hidden on Stats; the
+     currently-reading strip at the top of Stack dropped (it duplicated the
+     Now reading cards) — only its daily-goal line remains. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -143,6 +153,14 @@
   .wrap{ max-width: 760px; margin: 0 auto; }
 
   header{ margin-bottom: 28px; position: relative; }
+  /* v51: the big title block is Stack-only; other tabs get a compact
+     header so their content starts near the top of the screen */
+  body:not([data-tab="stack"]) header{ margin-bottom: 18px; }
+  body:not([data-tab="stack"]) header .eyebrow,
+  body:not([data-tab="stack"]) header .finished-counter{ display: none; }
+  body:not([data-tab="stack"]) header h1{ font-size: 24px; }
+  /* search does nothing on Stats */
+  body[data-tab="stats"] .global-search-row{ display: none; }
   /* ---- v47: settings gear (header) + settings sheet sections ---- */
   .btn-settings{
     position: absolute;
@@ -1432,6 +1450,8 @@
   /* ---- v24: due-date urgency line — a small coloured dot (the emoji
      already reads as one) next to plain text instead of a filled pill ---- */
   .due-badge-wrap{ margin: 0 0 9px; }
+  /* v51: plain renewal-status line (replaces the "Renewable" stamp + dots) */
+  .renew-line{ font-size: 11.5px; color: var(--ink-soft); margin: 8px 0 0; }
   .due-badge{
     display: inline-flex;
     align-items: center;
@@ -1449,7 +1469,7 @@
   .due-badge.badge-ok{ background: none; color: var(--ink-soft); }
   .due-badge.small{ font-size: 11px; padding: 0; }
   .due-badge-sub{
-    display: block;
+    display: inline;
     font-size: 10.5px;
     font-weight: 400;
     letter-spacing: 0;
@@ -2493,7 +2513,7 @@
   }
 </style>
 </head>
-<body>
+<body data-tab="stack">
 <div class="sticky-header" id="sticky-header" onclick="scrollToTop()" title="Back to top">
   <span class="sticky-title" id="sticky-title"></span>
   <span class="sticky-counts" id="sticky-counts"></span>
@@ -2875,6 +2895,7 @@
     const newPanel = document.getElementById('tab-panel-' + tab);
 
     activeTab = tab;
+    document.body.dataset.tab = tab; // v51: drives the compact header / search visibility
     document.getElementById('tab-btn-' + prevTab).classList.remove('active');
     document.getElementById('tab-btn-' + tab).classList.add('active');
     closeOverflowMenu();
@@ -3861,12 +3882,8 @@
   function progressLineText(book){
     const pct = progressPercent(book);
     if(pct === null) return '';
-    const d = daysUntil(book.dueDate);
-    const dayPart = d < 0
-      ? `Overdue by ${Math.abs(d)} day${Math.abs(d)===1?'':'s'}`
-      : d === 0 ? 'Due today'
-      : `${d} day${d===1?'':'s'} left`;
-    return `${dayPart} · ${pct}% read (${book.currentPage}/${book.totalPages})`;
+    // v51: due-date part dropped — the due badge right above already says it
+    return `${pct}% read · ${book.currentPage} of ${book.totalPages} pages`;
   }
 
   function progressBarHtml(book, variant){
@@ -4074,22 +4091,9 @@
     const goalLine = dailyGoal > 0
       ? `<div class="reading-widget-meta" style="margin:6px 2px 16px;">🎯 ${todayPages}/${dailyGoal} pages toward today's goal</div>`
       : '';
-    const cards = readingBooks.map(b => {
-      const pct = b.totalPages > 0 ? Math.max(0, Math.min(100, Math.round((b.currentPage / b.totalPages) * 100))) : 0;
-      const pagesText = b.totalPages > 0 ? `${b.currentPage} / ${b.totalPages} pages · ${pct}%` : 'No page count set';
-      return `
-        <div class="reading-widget-card">
-          ${coverHtml(b, 'compact', { uploadable: true })}
-          <div class="reading-widget-text">
-            <div class="reading-widget-label">Currently reading</div>
-            <div class="reading-widget-title">${escapeHtml(b.title)}</div>
-            <div class="reading-widget-track"><div class="reading-widget-fill" style="width:${pct}%"></div></div>
-            <div class="reading-widget-meta">${pagesText}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
-    slot.innerHTML = `<div class="reading-widget-row">${cards}</div>${goalLine}`;
+    // v51: the cover/progress cards that used to sit here repeated the
+    // "Now reading" cards just below — only the daily-goal line is kept.
+    slot.innerHTML = goalLine;
   }
 
   function toggleGoalEdit(){
@@ -4197,6 +4201,15 @@
     if(!dateStr) return '—';
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // ---- v51: "10 Nov" — year only when it isn't this year ----
+  function fmtDateCompact(dateStr){
+    if(!dateStr) return '—';
+    const d = new Date(dateStr + 'T00:00:00');
+    const opts = { day: 'numeric', month: 'short' };
+    if(d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString('en-AU', opts);
   }
 
   // ---- v33: short "JUL 18" form for the hero's due-date ticket stamp ----
@@ -5609,14 +5622,6 @@
     return copy;
   }
 
-  function renderDots(count, total){
-    let out = '';
-    const max = total || 3;
-    for(let i=0; i<max; i++){
-      out += i < count ? '<span class="dot-on">●</span>' : '<span class="dot-off">●</span>';
-    }
-    return out;
-  }
 
   function dueLineFor(book){
     const d = daysUntil(book.dueDate);
@@ -5644,8 +5649,11 @@
     const small = variant === 'small';
     const badgeCls = small ? 'due-badge small' : 'due-badge';
     const badge = `<span class="${badgeCls} ${info.cls}"><span class="due-badge-emoji">${info.emoji}</span>${info.label}</span>`;
-    const sub = small ? '' : `<span class="due-badge-sub">Due ${fmtDate(book.dueDate)}</span>`;
-    return `<span class="due-badge-wrap">${badge}${sub}</span>`;
+    // v51: the exact date rides on the same line as the relative label
+    // ("Due in 2 days · 10 Nov") instead of a second "Due 10 Nov 2026" line.
+    // The hero skips it — its ticket stamp already shows the date.
+    const sub = (small || variant === 'hero') ? '' : `<span class="due-badge-sub">· ${fmtDateCompact(book.dueDate)}</span>`;
+    return `<span class="due-badge-wrap" title="Due ${fmtDate(book.dueDate)}">${badge}${sub}</span>`;
   }
 
   // ---- v36: offline write queue — small badge on any card with a write
@@ -5760,7 +5768,7 @@
                   ${dueStampHtml(next.dueDate)}
                 </div>
               </div>
-              <div class="due-line">${dueBadgeHtml(next)}</div>
+              <div class="due-line">${dueBadgeHtml(next, 'hero')}</div>
             </div>
           </div>
           ${renderCardActionBlock(next, { showCompactToggle: false })}
@@ -6295,7 +6303,9 @@
       }else if(atLimit){
         stampHtml = `<div class="stamp final">Max renewals reached</div>`;
       }else{
-        stampHtml = `<div class="stamp renewable">Renewable</div>`;
+        // v51: renewable is informational — one quiet line replaces the
+        // dashed stamp + the separate "renewals used" dot row
+        stampHtml = `<p class="renew-line">Renewable · ${book.renewCount} of ${bookMax} renewal${bookMax === 1 ? '' : 's'} used</p>`;
       }
 
       const readingBadge = book.currentlyReading ? `<div class="reading-badge">Currently reading</div>` : '';
@@ -6323,7 +6333,6 @@
               </div>
             ` : ''}
             ${stampHtml}
-            <div class="dots">${renderDots(book.renewCount, bookMax)} <span style="font-size:10px; letter-spacing:0; color:var(--text-muted);">&nbsp;renewals used</span></div>
             ${inlineBoxesHtml}
             </div>
           </div>
