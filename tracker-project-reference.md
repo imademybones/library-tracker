@@ -32,6 +32,11 @@ v54 as "Goodreads Avg", renamed v55; Open Library community average, cached
 by the app), OL Ratings Count `fldqv3IGgnVKmQHws` (number, added v55 — count
 behind OL Avg; 0 = looked up and Open Library has no ratings, empty = not
 looked up yet).
+Goodreads Avg `fldpbYEJQKcZmeRWN` (number, 2 decimals, added v58 — typed in
+by hand in the Add modal / card Edit box; a *new* field, unrelated to the
+v54 field of the same name that was renamed to OL Avg), Owned
+`fldWrfxKBJxOY6gt9` (checkbox, added v58 — a book you own: no due date,
+source, renewals or calendar event; shown in the Stack tab's "My shelf").
 
 There is also an undocumented leftover field, `"Field 20"`
 (`fldkYhTNjaq9d63Zk`, singleLineText, sits between Wishlist Order and
@@ -76,10 +81,25 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v57**.
+Current version: **v58**.
 
 ## Changelog
 
+- **v58** — Owned books + manual Goodreads average.
+  - Add modal: "Library loan / I own it" toggle. Owned hides source,
+    borrow/due dates and renewable; saves `Owned: true` with no due date.
+  - Stack tab: owned books go in a new "My shelf" section (title A–Z)
+    below the loans list. Due dashboard, overdue/due-today counts and the
+    sticky header count loans only. Up Next is an owned book only when no
+    unread loans remain (tagged "From your shelf", no due stamp).
+  - Owned cards: "On your shelf" badge instead of a due badge, no
+    borrowed/source line, no renewal line or Renew menu item; never synced
+    to Google Calendar. Finished/DNF owned books skip the "waiting to go
+    back to the library" shelves; History shows "Owned".
+  - Card Edit box: "I own this" checkbox (converting a loan removes its
+    calendar event) and a Goodreads avg input.
+  - `Goodreads Avg` shown beside the Open Library average on stack cards,
+    wishlist cards and History rows.
 - **v57** — Open Library average on wishlist cards. Bulk lookup (Settings
   → Community ratings) now covers wishlist books as well as finished ones;
   adding a book to the wishlist triggers a background lookup. No schema
