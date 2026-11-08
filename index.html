@@ -89,6 +89,16 @@
      opens that library's real catalogue site in a new tab, so the person
      can paste and search in two taps. No new Airtable fields, no Worker
      changes — purely additive client-side feature. ---- */
+  /* ---- v50: UI review fixes — (1) one primary action per card: Update
+     progress for books being read, Start reading otherwise; "Reading now"
+     status-button dropped (the card badge already says it) and Stop
+     reading moved to the ••• menu; Finished is now an outlined secondary
+     button. (2) Renewable books that are overdue or due within 3 days get
+     Renew as the primary button (red when overdue). (6) Due dashboard is a
+     fixed 4-column grid and zero counts render grey instead of red/teal.
+     (7) Bottom nav stays over the 760px content column on desktop, the
+     wishlist badge is anchored to its icon, and the emoji icons are
+     replaced with matching SVG line icons. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -403,14 +413,15 @@
     font-weight: 600;
     margin: 0 0 16px;
   }
+  /* v50: always four equal columns, so "Plenty of time" never drops onto
+     its own row on a phone */
   .dash-grid{
-    display: flex;
-    gap: 22px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
   }
   .dash-card{
-    flex: 1;
-    min-width: 90px;
+    min-width: 0;
     background: none;
     color: var(--ink);
     padding: 0;
@@ -434,6 +445,8 @@
   .dash-card.due-today .dash-num{ color: var(--red); }
   .dash-card.due-week .dash-num{ color: var(--accent); }
   .dash-card.plenty .dash-num{ color: var(--ink); }
+  /* v50: a zero is good news (or nothing) — never shout it in red/teal */
+  .dash-card.is-zero .dash-num{ color: #d6d7d9; }
   .reading-shelf{
     display: flex;
     flex-wrap: wrap;
@@ -1397,11 +1410,15 @@
     border: 1.5px solid #dcdcdc;
   }
   .btn-reading:hover{ border-color: var(--accent); color: var(--accent); }
-  .btn-reading.active{
+  .btn-reading.active,
+  .btn-reading.btn-primary{
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
   }
+  .btn-reading.btn-primary:hover{ opacity: 0.9; color: #fff; }
+  /* v50: overdue + renewable — Renew is the primary action, in red */
+  .btn-reading.btn-urgent{ background: var(--red); border-color: var(--red); }
 
   .card-title{
     font-family: 'Fraunces', serif;
@@ -1562,11 +1579,13 @@
     font-weight: 600;
     padding: 8px 14px;
     border-radius: 3px;
-    background: var(--green);
-    color: #fff;
-    border: none;
+    /* v50: secondary (outlined) — finishing is a once-per-book action and
+       shouldn't out-shout the card's main button */
+    background: #fff;
+    color: var(--green);
+    border: 1.5px solid #dcdcdc;
   }
-  .btn-finish:hover{ opacity: 0.9; }
+  .btn-finish:hover{ border-color: var(--green); }
 
   .renew-inline{
     margin-top: 9px;
@@ -1727,6 +1746,10 @@
     background: #fff;
     border-top: 1px solid var(--line);
     padding: 7px 5px calc(7px + env(safe-area-inset-bottom, 0px));
+    /* v50: on wide screens keep the tabs over the 760px content column
+       instead of spreading across the whole window */
+    padding-left: max(5px, calc((100% - 760px) / 2));
+    padding-right: max(5px, calc((100% - 760px) / 2));
   }
   .bottom-nav-btn{
     flex: 1;
@@ -1745,12 +1768,16 @@
   }
   .bottom-nav-btn:hover{ color: var(--ink); }
   .bottom-nav-btn.active{ color: var(--accent); }
-  .bn-icon{ font-size: 18px; line-height: 1; }
+  .bn-icon{ line-height: 1; display: flex; }
+  /* v50: matching SVG line icons replace the mixed emoji set */
+  .bn-icon svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .bn-label{ font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; }
   .bn-badge{
     position: absolute;
     top: 2px;
-    right: 20%;
+    /* v50: anchored to the icon (centre of the button), not the button's
+       edge — right:20% drifted far from the icon on wide screens */
+    left: calc(50% + 6px);
     font-size: 9px;
     font-weight: 600;
     color: #fff;
@@ -2649,16 +2676,16 @@
      easier to reach one-handed on a phone ---- -->
 <nav class="bottom-nav" id="bottom-nav">
   <button class="bottom-nav-btn active" id="tab-btn-stack" onclick="showTab('stack')">
-    <span class="bn-icon">📖</span><span class="bn-label">Stack</span>
+    <span class="bn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5C5.5 4.5 8.5 4.5 12 6.5c3.5-2 6.5-2 9-1v13c-2.5-1-5.5-1-9 1-3.5-2-6.5-2-9-1z"/><path d="M12 6.5v13"/></svg></span><span class="bn-label">Stack</span>
   </button>
   <button class="bottom-nav-btn" id="tab-btn-wishlist" onclick="showTab('wishlist')">
-    <span class="bn-icon">☆</span><span class="bn-label">Wishlist</span><span class="bn-badge" id="wishlist-tab-count" style="display:none"></span>
+    <span class="bn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></span><span class="bn-label">Wishlist</span><span class="bn-badge" id="wishlist-tab-count" style="display:none"></span>
   </button>
   <button class="bottom-nav-btn" id="tab-btn-history" onclick="showTab('history')">
-    <span class="bn-icon">🕘</span><span class="bn-label">History</span>
+    <span class="bn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><span class="bn-label">History</span>
   </button>
   <button class="bottom-nav-btn" id="tab-btn-stats" onclick="showTab('stats')">
-    <span class="bn-icon">📊</span><span class="bn-label">Stats</span>
+    <span class="bn-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V7"/><path d="M17 16v-8"/></svg></span><span class="bn-label">Stats</span>
   </button>
 </nav>
 
@@ -3858,6 +3885,14 @@
   function toggleProgressBox(id){
     const box = document.getElementById('progress-box-' + id);
     if(box) box.classList.toggle('open');
+  }
+  // v50: "Update progress" from the ••• menu — close the menu (re-render)
+  // first, then open the box in the fresh DOM.
+  function openProgressFromMenu(id){
+    openOverflowId = null;
+    render();
+    const box = document.getElementById('progress-box-' + id);
+    if(box) box.classList.add('open');
   }
 
   async function confirmProgress(id){
@@ -5513,6 +5548,7 @@
   async function toggleCurrentlyReading(id){
     const book = books.find(b => b.id === id);
     const wasReading = book.currentlyReading;
+    openOverflowId = null; // v50: may be called from the ••• menu
 
     if(!wasReading){
       const activeCount = books.filter(b => b.currentlyReading).length;
@@ -5748,10 +5784,10 @@
         <div class="due-dashboard">
           <p class="dash-label">${activeBooks.length} active loan${activeBooks.length === 1 ? '' : 's'}</p>
           <div class="dash-grid">
-            <div class="dash-card overdue"><div class="dash-num">${overdueCount}</div><div class="dash-lbl">Overdue</div></div>
-            <div class="dash-card due-today"><div class="dash-num">${dueTodayCount}</div><div class="dash-lbl">Due today</div></div>
-            <div class="dash-card due-week"><div class="dash-num">${dueWeekCount}</div><div class="dash-lbl">Due this week</div></div>
-            <div class="dash-card plenty"><div class="dash-num">${plentyCount}</div><div class="dash-lbl">Plenty of time</div></div>
+            <div class="dash-card overdue ${overdueCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${overdueCount}</div><div class="dash-lbl">Overdue</div></div>
+            <div class="dash-card due-today ${dueTodayCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${dueTodayCount}</div><div class="dash-lbl">Due today</div></div>
+            <div class="dash-card due-week ${dueWeekCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${dueWeekCount}</div><div class="dash-lbl">Due this week</div></div>
+            <div class="dash-card plenty ${plentyCount === 0 ? 'is-zero' : ''}"><div class="dash-num">${plentyCount}</div><div class="dash-lbl">Plenty of time</div></div>
           </div>
         </div>
       `;
@@ -6153,6 +6189,30 @@
     const atLimit = book.renewCount >= bookMax;
     const canRenew = book.renewable && !atLimit;
 
+    // ---- v50: one primary action per card. An overdue / due-within-3-days
+    // book that can still be renewed gets Renew as its main button; a book
+    // being read gets Update progress (only where the progress box exists,
+    // i.e. regular expanded cards); everything else gets Start reading.
+    // Whatever reading toggle isn't the primary button moves into the menu.
+    const hasProgressBox = !!opts.parts && book.currentlyReading;
+    const dueIn = book.dueDate ? daysUntil(book.dueDate) : Infinity;
+    const renewUrgent = canRenew && dueIn <= 3;
+    let primaryHtml;
+    if(renewUrgent){
+      primaryHtml = `<button class="btn-reading btn-primary ${dueIn < 0 ? 'btn-urgent' : ''}" onclick="toggleRenewBox('${book.id}')">↻ Renew</button>`;
+    }else if(hasProgressBox){
+      primaryHtml = `<button class="btn-reading btn-primary" onclick="toggleProgressBox('${book.id}')">Update progress</button>`;
+    }else if(book.currentlyReading){
+      primaryHtml = `<button class="btn-reading" onclick="toggleCurrentlyReading('${book.id}')">Stop reading</button>`;
+    }else{
+      primaryHtml = `<button class="btn-reading btn-primary" onclick="toggleCurrentlyReading('${book.id}')">Start reading</button>`;
+    }
+    const menuReadingHtml = [
+      (renewUrgent && hasProgressBox) ? `<button onclick="openProgressFromMenu('${book.id}')">✎ Update progress</button>` : '',
+      (book.currentlyReading && (renewUrgent || hasProgressBox)) ? `<button onclick="toggleCurrentlyReading('${book.id}')">⏸ Stop reading</button>` : '',
+      (!book.currentlyReading && renewUrgent) ? `<button onclick="toggleCurrentlyReading('${book.id}')">📖 Start reading</button>` : ''
+    ].join('');
+
     const inlineBoxesHtml = `
       <div class="renew-inline ${openRenewIds.has(book.id) ? 'open' : ''}" id="renew-box-${book.id}">
         <input type="date" id="renew-date-${book.id}" min="${today}">
@@ -6200,16 +6260,15 @@
     const actionsHtml = `
       <div class="actions">
         <div class="actions-primary">
-          <button class="btn-reading ${book.currentlyReading ? 'active' : ''}" onclick="toggleCurrentlyReading('${book.id}')">
-            ${book.currentlyReading ? 'Reading now' : 'Start reading'}
-          </button>
+          ${primaryHtml}
           <button class="btn-finish" onclick="toggleFinishBox('${book.id}')">Finished</button>
           <button class="btn-overflow" onclick="toggleOverflowMenu('${book.id}')" title="More actions">•••</button>
         </div>
         <div class="overflow-menu ${openOverflowId === book.id ? 'open' : ''}">
-          <button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
+          ${menuReadingHtml}
+          ${renewUrgent ? '' : `<button onclick="toggleRenewBox('${book.id}')" ${canRenew ? '' : 'disabled'}>
             ${atLimit ? 'Renewed ' + bookMax + '/' + bookMax : (book.renewable ? '↻ Renew' : 'Not renewable')}
-          </button>
+          </button>`}
           <button onclick="toggleEditBox('${book.id}')">✎ Edit</button>
           <button onclick="toggleDnfBox('${book.id}')">🚫 Didn't finish</button>
           ${showCompactToggle ? `<button onclick="toggleCardCompact('${book.id}')">⊟ Compact view</button>` : ''}
@@ -6256,7 +6315,6 @@
             ${book.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(book.genre)}</span></div>` : ''}
             ${progressBarHtml(book, 'card')}
             ${book.currentlyReading ? `
-              <button class="tile-update-btn" onclick="toggleProgressBox('${book.id}')">Update progress</button>
               <div class="progress-inline" id="progress-box-${book.id}">
                 <input type="number" min="0" id="progress-page-${book.id}" value="${book.currentPage || 0}" placeholder="Page">
                 <span>/</span>
