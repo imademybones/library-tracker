@@ -76,10 +76,14 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v56**.
+Current version: **v57**.
 
 ## Changelog
 
+- **v57** — Open Library average on wishlist cards. Bulk lookup (Settings
+  → Community ratings) now covers wishlist books as well as finished ones;
+  adding a book to the wishlist triggers a background lookup. No schema
+  change — reuses `OL Avg` / `OL Ratings Count`.
 - **v56** — Open Library lookup fix. v55's bulk lookup sent ~6
   requests/second; Open Library throttles anonymous clients to roughly 1/s,
   so every request failed and nothing was saved. Now paced at ~1.1s per

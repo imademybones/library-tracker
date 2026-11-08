@@ -146,6 +146,10 @@
      429/5xx/network errors with 4s/8s/16s backoff, pauses after 5 failures
      in a row instead of hammering, shows live found/none/failed counts,
      and reports the actual error. ---- */
+  /* ---- v57: Open Library average also shown on wishlist cards ("★
+     Open Library 4.1 · 250 ratings" under the author line). Settings →
+     Community ratings now looks up wishlist books as well as finished ones,
+     and adding a book to the wishlist looks it up in the background. ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -728,6 +732,10 @@
   .stars-pick .star:hover{ color: #e8bb2e; }
   .hr-rating{ margin: 4px 0 0; display: flex; align-items: center; gap: 8px; }
   .gr-avg{ font-size: 10.5px; color: var(--muted); }
+  /* v57: Open Library average on wishlist cards */
+  .wl-ol{ margin: 3px 0 0; display: flex; align-items: center; gap: 4px; }
+  .wl-ol .star{ font-size: 11px; color: #d9a400; }
+  .wl-ol .gr-avg{ font-size: 11px; color: var(--ink-soft); }
   .finish-rating{ display: inline-flex; align-items: center; }
   .finish-rating .star{ font-size: 18px; }
   .settings-help{ font-size: 12px; color: var(--ink-soft); line-height: 1.45; margin: 0 0 10px; }
@@ -2949,7 +2957,7 @@
     <!-- v55: Open Library community averages -->
     <div class="settings-section">
       <p class="settings-section-label">Community ratings</p>
-      <p class="settings-help">Looks up each finished book's average rating on Open Library and shows it next to your stars in History. New books are looked up automatically when you finish them. Open Library has fewer ratings than Goodreads, so some books won't have one.</p>
+      <p class="settings-help">Looks up the Open Library average rating for your finished and wishlist books, shown in History and on wishlist cards. Books are looked up automatically when you add them to the wishlist or finish them. Open Library has fewer ratings than Goodreads, so some books won't have one.</p>
       <button class="btn-export" onclick="runOlLookup()">Look up Open Library ratings</button>
       <div id="ol-lookup-status"></div>
     </div>
@@ -4541,6 +4549,7 @@
       newBook = recordToBook(data.records[0]);
       books.push(newBook);
       if(source) rememberLastSource(source);
+      backgroundOlLookup(newBook.id); // v57: fire-and-forget
     }catch(e){
       if(e.isNetworkFailure){
         const tempId = 'temp-' + crypto.randomUUID();
@@ -5687,6 +5696,13 @@
     return { avg, count };
   }
 
+  // v57: one renderer for the Open Library average, shared by History rows
+  // and wishlist cards. Nothing when not looked up or no ratings.
+  function olAvgHtml(b){
+    if(!b.olCount) return '';
+    return `<span class="gr-avg" title="Open Library community average">Open Library ${Number(b.olAvg).toFixed(1)} · ${b.olCount} rating${b.olCount === 1 ? '' : 's'}</span>`;
+  }
+
   function olFields(r){
     return { 'OL Avg': r.avg, 'OL Ratings Count': r.count };
   }
@@ -5711,9 +5727,10 @@
   async function runOlLookup(){
     if(olLookupRunning) return;
     const el = document.getElementById('ol-lookup-status');
-    const todo = books.filter(b => b.finished && !isTempId(b.id) && b.olCount === null);
+    // v57: wishlist books too, so their cards can show the average
+    const todo = books.filter(b => (b.finished || b.wishlist) && !isTempId(b.id) && b.olCount === null);
     if(todo.length === 0){
-      if(el) el.innerHTML = '<p class="gr-msg">Every finished book has already been looked up.</p>';
+      if(el) el.innerHTML = '<p class="gr-msg">Every finished and wishlist book has already been looked up.</p>';
       return;
     }
     olLookupRunning = true;
@@ -6454,7 +6471,7 @@
               <div>
                 <p class="hr-title">${escapeHtml(b.title)}</p>
                 <p class="hr-meta">${escapeHtml(b.author || 'Author unknown')} · finished ${fmtDate(b.finishedDate)}</p>
-                <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${b.olCount ? `<span class="gr-avg" title="Open Library community average">Open Library ${Number(b.olAvg).toFixed(1)} · ${b.olCount} rating${b.olCount === 1 ? '' : 's'}</span>` : ''}</p>
+                <p class="hr-rating">${starsHtml(b.myRating, { onPick: `rateBook.bind(null, '${b.id}')` })}${olAvgHtml(b)}</p>
                 ${b.genre ? `<div class="wl-tags"><span class="wl-tag tag-genre">${escapeHtml(b.genre)}</span></div>` : ''}
               </div>
               <span class="hr-badge ${b.returned ? 'badge-returned' : 'badge-pending'}">${b.returned ? 'Returned' : 'Awaiting return'}</span>
@@ -6616,6 +6633,7 @@
               <div>
                 <p class="wl-title">${priorityBadge}${escapeHtml(b.title)}${pendingBadgeHtml(b, 'wl-pending-badge')}</p>
                 <p class="wl-meta">${escapeHtml(b.author || 'Author unknown')}${b.source ? ' · from ' + escapeHtml(b.source) : ''}</p>
+                ${b.olCount ? `<p class="wl-ol"><span class="star on" aria-hidden="true">★</span> ${olAvgHtml(b)}</p>` : ''}
                 ${tagsHtml}
               </div>
               <div class="wl-actions">
