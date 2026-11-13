@@ -37,6 +37,9 @@ by hand in the Add modal / card Edit box; a *new* field, unrelated to the
 v54 field of the same name that was renamed to OL Avg), Owned
 `fldWrfxKBJxOY6gt9` (checkbox, added v58 — a book you own: no due date,
 source, renewals or calendar event; shown in the Stack tab's "My shelf").
+Started Date `fld2aTk637EmcitJo` (date ISO, added v59 — set the first time
+"Start reading" is tapped; editable on stack cards and History rows; used by
+the days-to-finish stat, falling back to Borrow Date).
 
 There is also an undocumented leftover field, `"Field 20"`
 (`fldkYhTNjaq9d63Zk`, singleLineText, sits between Wishlist Order and
@@ -81,10 +84,16 @@ deployed via GitHub Pages from this repo. The Worker script is deployed
 separately by pasting into the Cloudflare dashboard — it is never generated
 from or checked into this repo.
 
-Current version: **v58**.
+Current version: **v59**.
 
 ## Changelog
 
+- **v59** — Days-to-finish fix. New `Started Date` field, stamped on the
+  first "Start reading" and editable on stack cards (Edit box) and History
+  rows. Stats "Avg days to finish" → "Typical days to finish": median, with
+  the average shown underneath, measured from Started Date when recorded,
+  else Borrow Date. Before this it was a borrow-to-finish mean (26 days on
+  real data vs a median of 20), skewed by long renewed loans.
 - **v58** — Owned books + manual Goodreads average.
   - Add modal: "Library loan / I own it" toggle. Owned hides source,
     borrow/due dates and renewable; saves `Owned: true` with no due date.
