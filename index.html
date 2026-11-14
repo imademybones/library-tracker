@@ -161,6 +161,13 @@
      returned, and History marks them "Owned". Goodreads avg can be typed
      in the Add modal or the card's Edit box, and shows beside the Open
      Library average on stack cards, wishlist cards and History. ---- */
+  /* ---- v59: days-to-finish fix. New Airtable field "Started Date",
+     stamped the first time you tap Start reading (kept if you stop and
+     restart) and editable on stack cards and History rows. The Stats card
+     is now "Typical days to finish": the median, with the average beneath,
+     measured from Started Date where recorded and Borrow Date otherwise.
+     (It was a plain borrow-to-finish average, which long renewed loans
+     pushed well above a typical book.) ---- */
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
   :root{
@@ -2295,6 +2302,7 @@
   .stats-headline .stats-card .big-num{ font-size: 56px; color: var(--accent); }
   .stats-headline .stats-card .big-label{ font-size: 12.5px; color: var(--ink-soft); }
   .stats-headline .stats-card .big-sublabel{ font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .stats-grid-small .stats-card .big-sublabel{ font-size: 10.5px; color: var(--muted); margin-top: 2px; } /* v59 */
   .stats-grid-small{ grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; margin-bottom: 8px; }
   .stats-grid-small .stats-card .big-num{ font-size: 26px; }
   .streak-row strong{ font-family: 'Fraunces', serif; font-size: 16px; }
@@ -4096,7 +4104,8 @@
       olCount: (typeof f['OL Ratings Count'] === 'number') ? f['OL Ratings Count'] : null,
       // v58: hand-entered Goodreads average, and books you own (no loan)
       goodreadsAvg: (typeof f['Goodreads Avg'] === 'number') ? f['Goodreads Avg'] : null,
-      owned: !!f['Owned']
+      owned: !!f['Owned'],
+      startedDate: f['Started Date'] || '' // v59
     };
   }
 
@@ -5855,11 +5864,17 @@
     const notes = document.getElementById('history-notes-' + id).value;
     const finishedDate = document.getElementById('history-date-' + id).value;
     const genre = getGenreValue('history-' + id);
+    const startedDate = (document.getElementById('history-started-' + id) || {}).value || ''; // v59
     if(!finishedDate){
       showToast('Pick a finished date first.');
       return;
     }
+    if(startedDate && startedDate > finishedDate){
+      showToast("The started date can't be after the finished date.");
+      return;
+    }
     const fields = {};
+    if(startedDate !== (book.startedDate || '')) fields['Started Date'] = startedDate || null;
     if(notes !== (book.notes || '')) fields['Notes'] = notes;
     if(finishedDate !== book.finishedDate) fields['Finished Date'] = finishedDate;
     if(genre !== (book.genre || '')) fields['Genre'] = genre || null;
@@ -5871,6 +5886,7 @@
     const apply = () => {
       book.notes = notes;
       book.finishedDate = finishedDate;
+      book.startedDate = startedDate;
       book.genre = genre;
       openHistoryEditIds.delete(id);
     };
@@ -6031,6 +6047,7 @@
     // v58
     const owned = document.getElementById('edit-owned-' + id).checked;
     const grAvg = parseAvgInput(document.getElementById('edit-gravg-' + id).value);
+    const startedDate = document.getElementById('edit-started-' + id).value; // v59
 
     if(!title || (!dueDate && !owned)){
       showToast(owned ? 'A title is needed.' : 'A title and a due date are both needed.');
@@ -6056,7 +6073,8 @@
       'Total Pages': totalPages,
       'Genre': genre || null,
       'Owned': owned,
-      'Goodreads Avg': grAvg
+      'Goodreads Avg': grAvg,
+      'Started Date': startedDate || null
     };
     // v58: owned books have no loan — clear the due date
     if(owned){ fields['Due Date'] = null; fields['Renewable'] = false; }
@@ -6077,6 +6095,7 @@
       book.genre = genre;
       book.owned = owned;
       book.goodreadsAvg = grAvg;
+      book.startedDate = startedDate;
       if(owned){ book.renewable = false; book.dueDate = ''; }
       await logReadingProgress(currentPage - previousPage);
       openEditIds.delete(id);
@@ -6102,6 +6121,7 @@
       book.genre = genre;
       book.owned = owned;
       book.goodreadsAvg = grAvg;
+      book.startedDate = startedDate;
       if(owned){ book.renewable = false; book.dueDate = ''; }
       // v58: a loan converted to owned drops its due-date calendar event
       if(owned && !wasOwned && book.calendarEventId) await removeCalendarEvent(book);
@@ -6121,6 +6141,7 @@
         book.genre = genre;
         book.owned = owned;
         book.goodreadsAvg = grAvg;
+        book.startedDate = startedDate;
         if(owned){ book.renewable = false; book.dueDate = ''; }
         await logReadingProgress(currentPage - previousPage);
         openEditIds.delete(id);
@@ -6207,10 +6228,15 @@
     }
 
     const fields = { 'Currently Reading': !wasReading };
+    // v59: remember the first time this book was started (kept if you stop
+    // and restart), so days-to-finish can measure actual reading time
+    const setStart = (!wasReading && !book.startedDate) ? todayISO() : null;
+    if(setStart) fields['Started Date'] = setStart;
 
     if(isTempId(id)){
       enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Currently reading — ${book.title}` });
       book.currentlyReading = !wasReading;
+      if(setStart) book.startedDate = setStart;
       render();
       showToast("Saved — will sync once you're back online.");
       return;
@@ -6222,10 +6248,12 @@
         body: JSON.stringify({ records: [{ id, fields }] })
       });
       book.currentlyReading = !wasReading;
+      if(setStart) book.startedDate = setStart;
     }catch(e){
       if(e.isNetworkFailure){
         enqueueWrite({ url: API_URL, method: 'PATCH', body: JSON.stringify({ records: [{ id, fields }] }), recordId: id, description: `Currently reading — ${book.title}` });
         book.currentlyReading = !wasReading;
+        if(setStart) book.startedDate = setStart;
         render();
         showToast("Saved — will sync once you're back online.");
         return;
@@ -6576,6 +6604,10 @@
                 <label for="history-notes-${b.id}">Note</label>
                 <textarea id="history-notes-${b.id}" placeholder="Add a note or short review…">${escapeHtml(b.notes)}</textarea>
                 <div class="hr-date-edit">
+                  <label for="history-started-${b.id}">Started date</label>
+                  <input type="date" id="history-started-${b.id}" value="${b.startedDate || ''}" max="${historyTodayStr}">
+                </div>
+                <div class="hr-date-edit">
                   <label for="history-date-${b.id}">Finished date</label>
                   <input type="date" id="history-date-${b.id}" value="${b.finishedDate}" max="${historyTodayStr}">
                 </div>
@@ -6924,6 +6956,7 @@
         </div>
         <div class="edit-check-row">
           <label><input type="checkbox" id="edit-owned-${book.id}" ${book.owned ? 'checked' : ''}> I own this (no due date)</label>
+          <label>Started <input type="date" id="edit-started-${book.id}" value="${book.startedDate || ''}" max="${today}"></label>
         </div>
         <div class="edit-check-row">
           <label><input type="checkbox" id="edit-renewable-${book.id}" ${book.renewable ? 'checked' : ''}> Renewable</label>
@@ -7089,12 +7122,21 @@
     const ratedFinished = books.filter(b => b.finished && b.myRating > 0);
     const avgRating = ratedFinished.length ? (ratedFinished.reduce((s, b) => s + b.myRating, 0) / ratedFinished.length).toFixed(1) : '—';
 
-    // Average days from borrow to finish, for finished books with both dates.
-    const durations = finishedAll
-      .filter(b => b.borrowDate && b.finishedDate)
-      .map(b => Math.round((new Date(b.finishedDate) - new Date(b.borrowDate)) / (1000*60*60*24)))
+    // Days to finish. v59: measured from Started Date (set when you tap
+    // "Start reading") where recorded, otherwise from Borrow Date. The
+    // headline is the median — a few long, renewed loans used to drag the
+    // plain average well above what a typical book takes.
+    const durationBooks = finishedAll.filter(b => (b.startedDate || b.borrowDate) && b.finishedDate);
+    const durations = durationBooks
+      .map(b => Math.round((new Date(b.finishedDate) - new Date(b.startedDate || b.borrowDate)) / (1000*60*60*24)))
       .filter(d => d >= 0);
     const avgDays = durations.length ? Math.round(durations.reduce((s,d) => s+d, 0) / durations.length) : null;
+    const sortedDur = [...durations].sort((a, b) => a - b);
+    const mid = Math.floor(sortedDur.length / 2);
+    const medianDays = sortedDur.length
+      ? Math.round(sortedDur.length % 2 ? sortedDur[mid] : (sortedDur[mid - 1] + sortedDur[mid]) / 2)
+      : null;
+    const fromStartCount = durationBooks.filter(b => b.startedDate).length;
 
     // Books finished so far this calendar year.
     const currentYear = new Date().getFullYear();
@@ -7149,7 +7191,7 @@
       <div class="stats-grid stats-grid-small">
         <div class="stats-card"><div class="big-num" id="stat-finished">0</div><div class="big-label">Books finished</div></div>
         <div class="stats-card"><div class="big-num" id="stat-graphic">0</div><div class="big-label">Graphic novels read</div></div>
-        <div class="stats-card"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Avg days to finish</div></div>
+        <div class="stats-card" title="Measured from the day you started reading where recorded (${fromStartCount} book${fromStartCount === 1 ? '' : 's'}), otherwise from the borrow date"><div class="big-num" id="stat-avg-days">0</div><div class="big-label">Typical days to finish</div>${avgDays !== null ? `<div class="big-sublabel">median · average ${avgDays}</div>` : ''}</div>
         <div class="stats-card"><div class="big-num" id="stat-avg-renewals">0</div><div class="big-label">Avg renewals/book</div></div>
         <div class="stats-card"><div class="big-num" id="stat-avg-rating">—</div><div class="big-label">Avg rating (${ratedFinished.length} rated)</div></div>
       </div>
@@ -7160,7 +7202,7 @@
     animateStatNum('stat-wishlist', wishlist.length);
     animateStatNum('stat-avg-renewals', avgRenewals);
     animateStatNum('stat-avg-rating', avgRating);
-    animateStatNum('stat-avg-days', avgDays !== null ? avgDays : '—');
+    animateStatNum('stat-avg-days', medianDays !== null ? medianDays : '—');
     animateStatNum('stat-finished-year', finishedThisYear);
     animateStatNum('stat-pages-year', pagesThisYear);
     animateStatNum('stat-graphic', finishedGraphic.length);
